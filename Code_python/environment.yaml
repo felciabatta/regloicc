@@ -1,0 +1,19 @@
+name: cbc
+channels:
+  - defaults
+dependencies:
+  - matplotlib
+  - scipy
+  - pip
+  - numpy
+  - ipython
+  - jupyter
+  - python
+  - ipykernel
+  - pyserial
+  - pip:
+    - torch
+    - torchvision
+    - keras
+    - delta-microscopy[torch-gpu]
+# prefix: ~/miniconda3/envs/cbc
