@@ -1,7 +1,4 @@
-"""
-------------------------------------------
-Reglo ICC Peristaltic Pump Control Library
-------------------------------------------
+"""Reglo ICC Peristaltic Pump Control Library
 """
 
 import time
@@ -12,6 +9,8 @@ import serial
 #---------------------------------------------------------------------------------#
 # LIBRARY MANAGING THE COMMUNICATION WITH A REGLO ICC WITH 3 INDEPENDENT CHANNELS #
 #---------------------------------------------------------------------------------#
+
+
 def velocity_converter_mu(speed, time='hour'):
     """
     Convert flow rate in μL/min to pump-compatible mmmmse format.
