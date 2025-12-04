@@ -88,7 +88,7 @@ class RegloICC:
     # Initialize the pump
     def __init__(self, COM):
         self.COM = COM
-        # Open the serial port with the data format corresponding to the RegloICC pump
+        # Open serial port with data format corresponding to the RegloICC pump
         self.sp = serial.Serial(
             self.COM,
             9600,
@@ -97,13 +97,12 @@ class RegloICC:
             bytesize=serial.EIGHTBITS,
         )
         self.direction = [0, 0, 0]  # 0 = clockwise, 1 = counter-clockwise
-        self.mode = [
-            0,
-            0,
-            0,
-        ]  # 0 = RPM, 1 = Flow Rate, 2 = Volume (over time), one can add here all other modes
+        # 0 = RPM, 1 = Flow Rate, 2 = Volume (over time)
+        # one can add here all other modes
+        self.mode = [0, 0, 0]
         self.speed = [0, 0, 0]  # rotation speed for each channel in RPM mode
-        # Change the size of 'direction', 'mode' and 'speed' according to the total number of channels to control.
+        # Change the size of 'direction', 'mode' and 'speed'
+        # according to the total number of channels to control.
         # In the case herein, 3 channels are being independently controlled
 
     # Delete the pump
@@ -112,19 +111,22 @@ class RegloICC:
 
     # Start the corresponding channel
     def start_channel(self, channel):
-        command = f"{channel}H\r".encode()  # 'H' to start the channel
-        # \r for the carriage return [CR] required to tell the pump that the command is finished
-        self.sp.write(command)  # write the command to the pump
-        time.sleep(
-            0.1
-        )  # give the pump time to process the command after sending it before reading the response
-        return self.sp.read(
-            self.sp.in_waiting
-        ).decode()  # read the pump response
+        # 'H' to start the channel
+        # \r for the carriage return [CR] required
+        # to tell the pump that the command is finished
+        command = f"{channel}H\r".encode()
+        # write the command to the pump
+        self.sp.write(command)
+        # give the pump time to process the command
+        # after sending it before reading the response
+        time.sleep(0.1)
+        # read the pump response
+        return self.sp.read(self.sp.in_waiting).decode()
 
     # Stop the corresponding channel
     def stop_channel(self, channel):
-        command = f"{channel}I\r".encode()  # 'I' to stop the channel
+        # 'I' to stop the channel
+        command = f"{channel}I\r".encode()
         self.sp.write(command)
         time.sleep(0.1)
         return self.sp.read(self.sp.in_waiting).decode()
@@ -136,26 +138,24 @@ class RegloICC:
         else:
             command = f"{channel}J\r".encode()  # clockwise
         self.sp.write(command)
-        self.direction[channel - 1] = direction  # pyhton count starts from 0
+        # python count starts from 0
+        self.direction[channel - 1] = direction
         time.sleep(0.1)
         return self.sp.read(self.sp.in_waiting).decode()
 
     # Get the rotation direction of a single channel
     def get_direction(self, channel):
-        command = (
-            f"{channel}xD\r".encode()
-        )  # 'xD' to get the rotation direction
+        # 'xD' to get the rotation direction
+        command = f"{channel}xD\r".encode()
         self.sp.write(command)
         time.sleep(0.1)
         # read the rotation direction from the corresponding channel
         return self.sp.read(self.sp.in_waiting).decode()
 
     # Set the speed for a single channel in RPM when in RPM mode
-    def set_speed(
-        self, channel, speed
-    ):  # in RPM, with speed  Result: '123'                       #
-        #                                                                                #
-        ## Convert the decimal part to a string with two digits :                        #
+    def set_speed(self, channel, speed):
+        # in RPM, with speed  Result: '123'
+        # Convert the decimal part to a string with two digits
         fixed_speed = int(round(speed * 100))  #
         cmd = f"{channel}S{fixed_speed:06d}\r".encode()
 
@@ -169,20 +169,15 @@ class RegloICC:
 
         self.sp.write(cmd)
 
-    ## When the two strings are concatenated, the result is a string that represents #
-    ## the original speed value in a fixed-point notation with three digits before   #
-    ## the decimal point and two digits after, without the decimal separator.        #
-    # --------------------------------------------------------------------------------#
+    # -----------------------------------------------------------------------
+    # When the two strings are concatenated,
+    # the result is a string that represents
+    # the original speed value in a fixed-point notation
+    # with three digits before
+    # the decimal point and two digits after, without the decimal separator.
+    # -----------------------------------------------------------------------
 
     # Read out speed of a single channel in RPM when in RPM mode
-    def get_speed(self, channel):
-        command = (
-            f"{channel}S\r".encode()
-        )  # 'S' to get the setting speed in RPM
-        self.sp.write(command)
-        time.sleep(0.1)
-        return self.sp.read(self.sp.in_waiting).decode()
-
     def get_speed(self, channel):
         command = (
             f"{channel}S\r".encode()
@@ -197,7 +192,8 @@ class RegloICC:
         time.sleep(0.1)
         return self.sp.read(self.sp.in_waiting).decode()
 
-    # Set the operational mode for a single channel (you can add all other modes)
+    # Set the operational mode for a single channel
+    # (you can add all other modes)
     def set_mode(self, channel, mode):
         if mode == 0:
             command = f"{channel}L\r".encode()  # RPM mode
