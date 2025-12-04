@@ -1,18 +1,13 @@
-# -*- coding: utf-8 -*-
 """
-Created on Tue Feb 25 10:52:28 2025
-
-@author: saram
-"""
-
-'''
 ------------------------------------------
 Reglo ICC Peristaltic Pump Control Library
 ------------------------------------------
-'''
+"""
+
+import time
 
 import serial
-import time
+
 
 #---------------------------------------------------------------------------------#
 # LIBRARY MANAGING THE COMMUNICATION WITH A REGLO ICC WITH 3 INDEPENDENT CHANNELS #
@@ -58,7 +53,7 @@ def velocity_converter(speed, volume='muL', time='hour'):
         'muL': 1/1000,
         'mL': 1
     }
-    
+
     e = {'muL':3,
          'mL': 1}
     mult =  {'muL':1000,
@@ -134,15 +129,15 @@ class RegloICC:
        cmd = f'{channel}S{fixed_speed:06d}\r'.encode()
 
        self.sp.write(cmd)
-    
+
     def set_speed_volume_time(self,channel,speed,s='-',e=3):
         #The speed is given in ml/min - hence we convert in muL.
         #Speed given in 4 digit mmmmse converted as m.mmm
         cmd =f'{channel}f{speed:04d}{s}{e}\r'.encode()
         print(cmd)
-        
+
         self.sp.write(cmd)
-        
+
     ## When the two strings are concatenated, the result is a string that represents #
     ## the original speed value in a fixed-point notation with three digits before   #
     ## the decimal point and two digits after, without the decimal separator.        #
@@ -154,15 +149,15 @@ class RegloICC:
         self.sp.write(command)
         time.sleep(0.1)
         return self.sp.read(self.sp.in_waiting).decode()
-    
+
     def get_speed(self, channel):
         command = f'{channel}S\r'.encode() # 'S' to get the setting speed in RPM
         self.sp.write(command)
         time.sleep(0.1)
         return self.sp.read(self.sp.in_waiting).decode()
-    
+
     def get_flowrate(self, channel):
-        command = f'{channel}f\r'.encode() # 
+        command = f'{channel}f\r'.encode() #
         self.sp.write(command)
         time.sleep(0.1)
         return self.sp.read(self.sp.in_waiting).decode()
