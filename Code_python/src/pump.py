@@ -40,12 +40,12 @@ def velocity_converter_mu(speed, time="hour"):
     Returns (mmmm, '-', exponent).
     """
     # Convert time to minutes if needed
-    time_factors = {"min": 1, "hour": 60}
+    time_units = {"min": 1, "hour": 60}
 
-    if time not in time_factors:
+    if time not in time_units:
         raise ValueError("Invalid time unit. Use 'min' or 'hour'.")
 
-    flow_uL_min = speed / time_factors[time]
+    flow_uL_min = speed / time_units[time]
 
     for exponent in range(1, 4):
         scaled = flow_uL_min * 10**exponent
@@ -56,14 +56,14 @@ def velocity_converter_mu(speed, time="hour"):
     return int(round(flow_uL_min * 1000)), "-", 3
 
 
-def velocity_converter(speed, volume="muL", time="hour"):
+def velocity_converter(speed, volume="muL", time="hour"):  # UNUSED
     """
     Convert flow rate to pump-compatible mmmmse format (flow_int, exponent).
     Chooses the smallest exponent (1–3) that keeps 1–3 decimal digits.
     """
     print("heiiiii")
     # Time conversion to minutes
-    time_factors = {"min": 1, "hour": 60}
+    time_units = {"min": 1, "hour": 60}
 
     # Volume conversion to mL
     volume_factors = {"muL": 1 / 1000, "mL": 1}
@@ -71,13 +71,13 @@ def velocity_converter(speed, volume="muL", time="hour"):
     e = {"muL": 3, "mL": 1}
     mult = {"muL": 1000, "mL": 1}
 
-    if time not in time_factors:
+    if time not in time_units:
         raise ValueError("Invalid time unit. Use , 'min', or 'hour'.")
     if volume not in volume_factors:
         raise ValueError("Invalid volume unit. Use 'muL' or 'mL'.")
 
     # Convert to mL/min
-    flow_mL_min = speed * volume_factors[volume] / time_factors[time]
+    flow_mL_min = speed * volume_factors[volume] / time_units[time]
 
     print(flow_mL_min)
     # If nothing fits exactly, round to 3 decimals (e=3)
