@@ -114,7 +114,7 @@ class RegloICC:
     def set_speed(self, channel, speed):
         # in RPM, with speed  Result: '123'
         # Convert the decimal part to a string with two digits
-        fixed_speed = int(round(speed * 100))  #
+        fixed_speed = int(round(speed * 100))
         cmd = f"{channel}S{fixed_speed:06d}\r".encode()
 
         self.sp.write(cmd)
