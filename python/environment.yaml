@@ -1,6 +1,7 @@
 name: cbc
 channels:
   - defaults
+  - conda-forge
 dependencies:
   - matplotlib
   - scipy
@@ -11,6 +12,8 @@ dependencies:
   - python
   - ipykernel
   - pyserial
+  - xmltodict
+  - liffile
   - pip:
     - torch
     - torchvision
