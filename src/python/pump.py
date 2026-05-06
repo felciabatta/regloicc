@@ -15,7 +15,7 @@ pump.start_channel(channel)
 v, s, e = velocity_converter_mu(50,time='min')
 pump.set_direction(1, 0)
 pump.set_mode(1, 1)
-pump.set_speed_volume_time(1,v ,s, e)
+pump.set_flowrate(1,v ,s, e)
 print(pump.get_flowrate(1))
 pump.start_channel(1)
 time.sleep(10)
@@ -43,27 +43,29 @@ from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
 
 
 class RegloICC:
-    def __init__(self, COM):
+    def __init__(
+        self, com, direction=[0, 0, 0], mode=[0, 0, 0], speed=[0, 0, 0]
+    ):
         """Initialize the pump and set up the serial connection."""
 
-        self.COM = COM
+        self.com = com
         # Open serial port with data format corresponding to the RegloICC pump
         self.sp = Serial(
-            self.COM,
+            com,
             9600,
             parity=PARITY_NONE,
             stopbits=STOPBITS_ONE,
             bytesize=EIGHTBITS,
         )
 
-        self.direction = [0, 0, 0]
+        self.direction = direction
         # 0 = clockwise, 1 = counter-clockwise
 
-        self.mode = [0, 0, 0]
+        self.mode = mode
         # 0 = RPM, 1 = Flow Rate, 2 = Volume (over time)
         # one can add here all other modes
 
-        self.speed = [0, 0, 0]  # rotation speed for each channel in RPM mode
+        self.speed = speed  # rotation speed for each channel in RPM mode
         # Change the size of 'direction', 'mode' and 'speed'
         # according to the total number of channels to control.
         # In the case herein, 3 channels are being independently controlled
@@ -73,62 +75,63 @@ class RegloICC:
 
         self.sp.close()
 
+    def write_receive(self, command):
+        """Write a command to the pump and read the response."""
+
+        self.sp.write(command.encode())  # send to serial
+        time.sleep(0.1)  # time to process
+        return self.sp.read(self.sp.in_waiting).decode()  # response
+
+    def fwrite_receive(self, channel, inner_command):
+        """Format & write a command to the pump and read the response."""
+
+        # \r for the carriage return [CR] required
+        # to tell the pump that the command is finished
+        return self.write_receive(f"{channel}{inner_command}\r")
+
     def start_channel(self, channel):
         """Start the corresponding channel"""
 
         # 'H' to start the channel
-        # \r for the carriage return [CR] required
-        # to tell the pump that the command is finished
-        command = f"{channel}H\r".encode()
-        self.sp.write(command)  # send to serial
-        time.sleep(0.1)  # time to process
-        # read the pump response
-        return self.sp.read(self.sp.in_waiting).decode()
+        return self.fwrite_receive(channel, "H")
 
     def stop_channel(self, channel):
         """Stop the corresponding channel"""
 
         # 'I' to stop the channel
-        command = f"{channel}I\r".encode()
-        self.sp.write(command)
-        time.sleep(0.1)
-        return self.sp.read(self.sp.in_waiting).decode()
+        return self.fwrite_receive(channel, "I")
 
     def set_direction(self, channel, direction):
         """Set the rotation direction for a single channel"""
 
-        if direction == 1:
-            command = f"{channel}K\r".encode()  # counter-clockwise
-        else:
-            command = f"{channel}J\r".encode()  # clockwise
-        self.sp.write(command)
-        # python count starts from 0
         self.direction[channel - 1] = direction
-        time.sleep(0.1)
-        return self.sp.read(self.sp.in_waiting).decode()
+        # K: counter-clockwise, J: clockwise
+        d = {0: "J", 1: "K"}.get(direction, "J")
+        return self.fwrite_receive(channel, d)
 
     def get_direction(self, channel):
         """Get the rotation direction of a single channel"""
 
         # 'xD' to get the rotation direction
-        command = f"{channel}xD\r".encode()
-        self.sp.write(command)
-        time.sleep(0.1)
-        # read the rotation direction from the corresponding channel
-        return self.sp.read(self.sp.in_waiting).decode()
+        return self.fwrite_receive(channel, "xD")
 
-    def set_speed(self, channel, speed):
+    def set_rpm(self, channel, rpm):
         """Set the speed for a single channel in RPM when in RPM mode"""
+
+        self.speed[channel - 1] = rpm
 
         # in RPM, with speed  Result: '123'
         # Convert the decimal part to a string with two digits
-        fixed_speed = int(round(speed * 100))
-        cmd = f"{channel}S{fixed_speed:06d}\r".encode()
+        fixed_speed = int(round(rpm * 100))
+        return self.fwrite_receive(channel, f"S{fixed_speed:06d}")
 
-        self.sp.write(cmd)
-        self.speed[channel - 1] = speed
+    def get_rpm(self, channel):
+        """Read out speed of a single channel in RPM when in RPM mode"""
 
-    def set_speed_volume_time(self, channel, speed: int, s="-", e=3):
+        # 'S' to get the setting speed in RPM
+        return self.fwrite_receive(channel, "S")
+
+    def set_flowrate(self, channel, flowrate: int, s="-", e=3):
         r"""Set flow rate in mL/min
 
         RegloICC uses the format string `mmmmse` to encode the flow rate,
@@ -136,67 +139,50 @@ class RegloICC:
 
         :type channel: int
         :param channel:
-        :type speed: int
-        :param speed:
+        :type flowrate: int
+        :param flowrate:
             Four-digit integer `mmmm`.
             Represents the 4 sf of the floating point number `m.mmm`.
         :type s: str
         :param s:
             Sign of exponent `"+"` or `"-"`.
-        :type e" int
+        :type e: int
         :param e:
             Exponent.
+
+        Note
+        ----
+        When the two strings are concatenated,
+        the result is a string that represents
+        the original speed value in a fixed-point notation
+        with three digits before the decimal point and two digits after,
+        without the decimal separator.
         """
-        cmd = f"{channel}f{speed:04d}{s}{e}\r".encode()
+
+        self.speed[channel - 1] = flowrate
+
+        cmd = f"f{flowrate:04d}{s}{e}"
         print(cmd)
-
-        self.sp.write(cmd)
-        self.speed[channel - 1] = speed
-
-        # --------------------------------------------------------------------
-        # When the two strings are concatenated,
-        # the result is a string that represents
-        # the original speed value in a fixed-point notation
-        # with three digits before the decimal point and two digits after,
-        # without the decimal separator.
-        # --------------------------------------------------------------------
-
-    def get_speed(self, channel):
-        """Read out speed of a single channel in RPM when in RPM mode"""
-
-        # 'S' to get the setting speed in RPM
-        command = f"{channel}S\r".encode()
-        self.sp.write(command)
-        time.sleep(0.1)
-        return self.sp.read(self.sp.in_waiting).decode()
+        return self.fwrite_receive(channel, cmd)
 
     def get_flowrate(self, channel):
-        command = f"{channel}f\r".encode()
-        self.sp.write(command)
-        time.sleep(0.1)
-        return self.sp.read(self.sp.in_waiting).decode()
+        return self.fwrite_receive(channel, "f")
 
     def set_mode(self, channel, mode):
         """Set the operational mode for a single channel
         (you can add all other modes)
         """
-        if mode == 0:
-            command = f"{channel}L\r".encode()  # RPM mode
-        elif mode == 1:
-            command = f"{channel}M\r".encode()  # Flow rate mode
-        else:
-            command = f"{channel}G\r".encode()  # Volume (over time) mode
-        self.sp.write(command)
         self.mode[channel - 1] = mode
-        time.sleep(0.1)
-        return self.sp.read(self.sp.in_waiting).decode()
+
+        # L = rpm, M = flowrate, G = volume (over time)
+        m = {0: "L", 1: "M", 2: "G"}.get(mode, "L")
+        return self.fwrite_receive(channel, m)
 
     def get_mode(self, channel):
         """Get the operational mode of a single channel"""
-        command = f"{channel}xM\r".encode()  # 'xM' to get the operational mode
-        self.sp.write(command)
-        time.sleep(0.1)
-        return self.sp.read(self.sp.in_waiting).decode()
+
+        # 'xM' to get the operational mode
+        return self.fwrite_receive(channel, "xM")
 
 
 def velocity_converter_mu(speed: float, unit="hour"):
@@ -231,7 +217,7 @@ def velocity_converter(speed, volume="muL", time="hour"):  # UNUSED
     Convert flow rate to pump-compatible mmmmse format (flow_int, exponent).
     Chooses the smallest exponent (1–3) that keeps 1–3 decimal digits.
     """
-    print("heiiiii")
+
     # Time conversion to minutes
     time_units = {"min": 1, "hour": 60}
 
