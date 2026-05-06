@@ -39,58 +39,64 @@ References
 
 import time
 
-import serial
+from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
 
 
 class RegloICC:
-    # Initialize the pump
     def __init__(self, COM):
+        """Initialize the pump and set up the serial connection."""
+
         self.COM = COM
         # Open serial port with data format corresponding to the RegloICC pump
-        self.sp = serial.Serial(
+        self.sp = Serial(
             self.COM,
             9600,
-            parity=serial.PARITY_NONE,
-            stopbits=serial.STOPBITS_ONE,
-            bytesize=serial.EIGHTBITS,
+            parity=PARITY_NONE,
+            stopbits=STOPBITS_ONE,
+            bytesize=EIGHTBITS,
         )
-        self.direction = [0, 0, 0]  # 0 = clockwise, 1 = counter-clockwise
+
+        self.direction = [0, 0, 0]
+        # 0 = clockwise, 1 = counter-clockwise
+
+        self.mode = [0, 0, 0]
         # 0 = RPM, 1 = Flow Rate, 2 = Volume (over time)
         # one can add here all other modes
-        self.mode = [0, 0, 0]
+
         self.speed = [0, 0, 0]  # rotation speed for each channel in RPM mode
         # Change the size of 'direction', 'mode' and 'speed'
         # according to the total number of channels to control.
         # In the case herein, 3 channels are being independently controlled
 
-    # Delete the pump
     def __del__(self):
+        """Delete the pump"""
+
         self.sp.close()
 
-    # Start the corresponding channel
     def start_channel(self, channel):
+        """Start the corresponding channel"""
+
         # 'H' to start the channel
         # \r for the carriage return [CR] required
         # to tell the pump that the command is finished
         command = f"{channel}H\r".encode()
-        # write the command to the pump
-        self.sp.write(command)
-        # give the pump time to process the command
-        # after sending it before reading the response
-        time.sleep(0.1)
+        self.sp.write(command)  # send to serial
+        time.sleep(0.1)  # time to process
         # read the pump response
         return self.sp.read(self.sp.in_waiting).decode()
 
-    # Stop the corresponding channel
     def stop_channel(self, channel):
+        """Stop the corresponding channel"""
+
         # 'I' to stop the channel
         command = f"{channel}I\r".encode()
         self.sp.write(command)
         time.sleep(0.1)
         return self.sp.read(self.sp.in_waiting).decode()
 
-    # Set the rotation direction for a single channel
     def set_direction(self, channel, direction):
+        """Set the rotation direction for a single channel"""
+
         if direction == 1:
             command = f"{channel}K\r".encode()  # counter-clockwise
         else:
@@ -101,8 +107,9 @@ class RegloICC:
         time.sleep(0.1)
         return self.sp.read(self.sp.in_waiting).decode()
 
-    # Get the rotation direction of a single channel
     def get_direction(self, channel):
+        """Get the rotation direction of a single channel"""
+
         # 'xD' to get the rotation direction
         command = f"{channel}xD\r".encode()
         self.sp.write(command)
@@ -110,14 +117,16 @@ class RegloICC:
         # read the rotation direction from the corresponding channel
         return self.sp.read(self.sp.in_waiting).decode()
 
-    # Set the speed for a single channel in RPM when in RPM mode
     def set_speed(self, channel, speed):
+        """Set the speed for a single channel in RPM when in RPM mode"""
+
         # in RPM, with speed  Result: '123'
         # Convert the decimal part to a string with two digits
         fixed_speed = int(round(speed * 100))
         cmd = f"{channel}S{fixed_speed:06d}\r".encode()
 
         self.sp.write(cmd)
+        self.speed[channel - 1] = speed
 
     def set_speed_volume_time(self, channel, speed: int, s="-", e=3):
         r"""Set flow rate in mL/min
@@ -142,20 +151,21 @@ class RegloICC:
         print(cmd)
 
         self.sp.write(cmd)
+        self.speed[channel - 1] = speed
 
-    # -----------------------------------------------------------------------
-    # When the two strings are concatenated,
-    # the result is a string that represents
-    # the original speed value in a fixed-point notation
-    # with three digits before
-    # the decimal point and two digits after, without the decimal separator.
-    # -----------------------------------------------------------------------
+        # --------------------------------------------------------------------
+        # When the two strings are concatenated,
+        # the result is a string that represents
+        # the original speed value in a fixed-point notation
+        # with three digits before the decimal point and two digits after,
+        # without the decimal separator.
+        # --------------------------------------------------------------------
 
     def get_speed(self, channel):
         """Read out speed of a single channel in RPM when in RPM mode"""
-        command = (
-            f"{channel}S\r".encode()
-        )  # 'S' to get the setting speed in RPM
+
+        # 'S' to get the setting speed in RPM
+        command = f"{channel}S\r".encode()
         self.sp.write(command)
         time.sleep(0.1)
         return self.sp.read(self.sp.in_waiting).decode()
