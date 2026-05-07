@@ -153,7 +153,7 @@ class RegloICC:
         # 'S' to get the setting speed in RPM
         return self.fwrite_receive(channel, "S")
 
-    def set_flowrate(self, channel, flowrate: int, s="-", e=3):
+    def set_flowrate(self, channel, flowrate, s="-", e=3, from_unit=None):
         r"""Set flow rate in mL/min
 
         RegloICC uses the format string `mmmmse` to encode the flow rate,
@@ -161,7 +161,7 @@ class RegloICC:
 
         :type channel: int
         :param channel:
-        :type flowrate: int
+        :type flowrate:
         :param flowrate:
             Four-digit integer `mmmm`.
             Represents the 4 sf of the floating point number `m.mmm`.
@@ -180,6 +180,10 @@ class RegloICC:
         with three digits before the decimal point and two digits after,
         without the decimal separator.
         """
+
+        if from_unit is not None:
+            mmmmse = flux2mmmmse(flowrate, from_unit=from_unit)
+            return self.set_flowrate(channel, *mmmmse, from_unit=None)
 
         self.speed[channel - 1] = flowrate
 
