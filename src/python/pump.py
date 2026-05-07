@@ -64,6 +64,13 @@ def get_port(com=None):
 
 
 class RegloICC:
+    """RegloICC pump control.
+
+    Change the size of 'direction', 'mode' and 'speed'
+    according to the total number of channels to control.
+    In the case herein, 3 channels are being independently controlled.
+    """
+
     def __init__(
         self,
         com=None,
@@ -73,8 +80,8 @@ class RegloICC:
         active=[False, False, False],
     ):
         """Initialize the pump and set up the serial connection."""
-        # Open serial port with data format corresponding to the RegloICC pump
         self.com = get_port(com)
+        # Open serial port with data format corresponding to the RegloICC pump
         self.serial = Serial(
             self.com,
             9600,
@@ -88,21 +95,23 @@ class RegloICC:
         """Defines which channels are active."""
 
         self.direction = direction
-        """0 = clockwise, 1 = counter-clockwise"""
+        """Defines pump direction for each channel.
+
+        0 = clockwise, 1 = counter-clockwise
+        """
 
         self.mode = mode
-        """0 = RPM, 1 = Flow Rate, 2 = Volume (over time)
+        """Defines pump-speed mode for each channel.
+
+        0 = rpm, 1 = flowrate, 2 = volume (over time).
 
         One can add here all other modes.
         """
 
         self.speed = speed
-        """Rotation speed for each channel in RPM mode
+        """Define pump speed for each channel (relative to mode)."""
 
-        Change the size of 'direction', 'mode' and 'speed'
-        according to the total number of channels to control.
-        In the case herein, 3 channels are being independently controlled.
-        """
+        self.set_all()
 
     def __del__(self):
         """Delete the pump."""
@@ -120,14 +129,39 @@ class RegloICC:
         # to tell the pump that the command is finished
         return self.write_receive(f"{channel}{inner_command}\r")
 
-    def set_all(self, direction=None, mode=None, speed=None, from_unit=None):
-        direction = [None] * 3 if direction is None else direction
-        mode = [None] * 3 if mode is None else mode
-        speed = [None] * 3 if speed is None else speed
-        for channel, d, m, s in zip(range(1, 4), direction, mode, speed):
+    def parse_param(self, param):
+        """Parse a channel parameter."""
+        return [param] * 3 if not isinstance(param, list) else param
+
+    def set_all(
+        self,
+        active=None,
+        direction=None,
+        mode=None,
+        speed=None,
+        from_unit=None,
+    ):
+        """Set direction, mode and speed for all channels."""
+        pars = (self.parse_param(p) for p in (active, direction, mode, speed))
+        for channel, a, d, m, s in zip(range(1, 4), *pars):
+            self.set_active(channel, a)
             self.set_direction(channel, d)
             self.set_mode(channel, m)
-            self.set_flowrate(channel, s, from_unit=from_unit)
+            self.set_speed(channel, s, from_unit=from_unit)
+        pass
+
+    def set_active(self, channel, active=None):
+        """Activate or deactivate a channel."""
+        if active is not None:
+            self.active[channel - 1] = active
+        else:
+            active = self.active[channel - 1]
+
+        return (
+            self.start_channel(channel)
+            if active
+            else self.stop_channel(channel)
+        )
 
     def start_channel(self, channel):
         """Start the corresponding channel."""
@@ -156,6 +190,18 @@ class RegloICC:
         """Get the rotation direction of a single channel."""
         # 'xD' to get the rotation direction
         return self.fwrite_receive(channel, "xD")
+
+    def set_speed(self, channel, *args, from_unit=None):
+        """Set the speed for a single channel in the current mode."""
+        m = self.mode[channel - 1]
+        if m == 0:  # RPM mode
+            return self.set_rpm(channel, *args)
+        elif m == 1:  # Flow rate mode
+            return self.set_flowrate(channel, *args, from_unit=from_unit)
+        else:
+            raise ValueError(
+                "Unsupported mode. Use 0 for RPM or 1 for Flow Rate."
+            )
 
     def set_rpm(self, channel, rpm=None):
         """Set the speed for a single channel in RPM when in RPM mode."""
