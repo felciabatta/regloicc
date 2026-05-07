@@ -39,24 +39,46 @@ References
 
 import time
 
+from numpy import sign
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
+from serial.tools import list_ports
+
+
+def get_port(com=None):
+    if com is None:
+        ports = list_ports.comports()
+        if not ports:
+            raise ValueError("No COM ports found. Please connect the pump.")
+
+        print("Available COM ports:")
+        for p, port in enumerate(ports):
+            print(f"{p}  {port.device}: {port.description}")
+        print("")
+
+        p = int(input("COM port not specified. Please select a port: "))
+        return ports[p].device
+    elif isinstance(com, str):
+        return com
+    else:
+        raise ValueError("Invalid COM port spec. Use None or string.")
 
 
 class RegloICC:
     def __init__(
-        self, com, direction=[0, 0, 0], mode=[0, 0, 0], speed=[0, 0, 0]
+        self, com=None, direction=[0, 0, 0], mode=[0, 0, 0], speed=[0, 0, 0]
     ):
         """Initialize the pump and set up the serial connection."""
 
-        self.com = com
         # Open serial port with data format corresponding to the RegloICC pump
-        self.sp = Serial(
-            com,
+        self.com = get_port(com)
+        self.serial = Serial(
+            self.com,
             9600,
             parity=PARITY_NONE,
             stopbits=STOPBITS_ONE,
             bytesize=EIGHTBITS,
         )
+        print(f"Connected to pump on {self.com}")
 
         self.direction = direction
         # 0 = clockwise, 1 = counter-clockwise
@@ -73,14 +95,14 @@ class RegloICC:
     def __del__(self):
         """Delete the pump"""
 
-        self.sp.close()
+        self.serial.close()
 
     def write_receive(self, command):
         """Write a command to the pump and read the response."""
 
-        self.sp.write(command.encode())  # send to serial
+        self.serial.write(command.encode())  # send to serial
         time.sleep(0.1)  # time to process
-        return self.sp.read(self.sp.in_waiting).decode()  # response
+        return self.serial.read(self.serial.in_waiting).decode()  # response
 
     def fwrite_receive(self, channel, inner_command):
         """Format & write a command to the pump and read the response."""
@@ -183,6 +205,38 @@ class RegloICC:
 
         # 'xM' to get the operational mode
         return self.fwrite_receive(channel, "xM")
+
+
+def flux2mmmmse(flowrate, from_unit="mL/min"):
+    """Convert flowrate (flux) from mL/min to mmmmse format.
+
+    :param flowrate:
+    :param from_unit:
+
+    :rtype: tuple[int, str, int]
+    :returns:
+        Flow rate tuple `(mmmm, "-", exponent)`.
+    """
+
+    v_unit, t_unit = from_unit.split("/", 1)
+    time_factors = {"s": 1 / 60, "min": 1, "hr": 60}
+    vol_factors = {"uL": 1e-3, "mL": 1}
+    if t_unit not in time_factors:
+        raise ValueError("Invalid time unit. Use 's' min' or 'hr'.")
+    if v_unit not in vol_factors:
+        raise ValueError("Invalid volume unit. Use 'uL' or 'mL'.")
+    flow_mL_min = flowrate * vol_factors[v_unit] / time_factors[t_unit]
+
+    s = sign(flow_mL_min - 1)
+    e = 0
+    flow_scaled = flow_mL_min * 10 ** (-s * e)
+    while not (1 <= flow_scaled < 10):
+        e += 1
+        flow_scaled = flow_mL_min * 10 ** (-s * e)
+    flow_scaled *= 1000
+    mmmm = int(min(round(flow_scaled), 9999))
+
+    return (mmmm, "-" if s == -1 else "+", e)
 
 
 def velocity_converter_mu(speed: float, unit="hour"):
