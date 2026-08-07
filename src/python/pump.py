@@ -74,10 +74,10 @@ class RegloICC:
     def __init__(
         self,
         com=None,
-        direction=[0, 0, 0],
-        mode=[0, 0, 0],
-        speed=[0, 0, 0],
-        active=[False, False, False],
+        active=False,
+        direction=0,
+        mode=1,
+        speed=0,
     ):
         """Initialize the pump and set up the serial connection."""
         self.com = get_port(com)
@@ -91,16 +91,16 @@ class RegloICC:
         )
         print(f"Connected to pump on {self.com}")
 
-        self.active = active
+        self.active = self.parse_param(active)
         """Defines which channels are active."""
 
-        self.direction = direction
+        self.direction = self.parse_param(direction)
         """Defines pump direction for each channel.
 
         0 = clockwise, 1 = counter-clockwise
         """
 
-        self.mode = mode
+        self.mode = self.parse_param(mode)
         """Defines pump-speed mode for each channel.
 
         0 = rpm, 1 = flowrate, 2 = volume (over time).
@@ -108,7 +108,7 @@ class RegloICC:
         One can add here all other modes.
         """
 
-        self.speed = speed
+        self.speed = self.parse_param(speed)
         """Define pump speed for each channel (relative to mode)."""
 
         self.set_all()
@@ -121,7 +121,12 @@ class RegloICC:
         """Write a command to the pump and read the response."""
         self.serial.write(command.encode())  # send to serial
         time.sleep(0.1)  # time to process
-        return self.serial.read(self.serial.in_waiting).decode()  # response
+        response = self.serial.read(
+            self.serial.in_waiting
+        ).decode()  # response
+        time.sleep(0.1)  # time to process
+        print(f"Sent: {command.strip()}, Response: {response.strip()}")
+        return response
 
     def fwrite_receive(self, channel, inner_command):
         """Format & write a command to the pump and read the response."""
@@ -144,10 +149,22 @@ class RegloICC:
         """Set direction, mode and speed for all channels."""
         pars = (self.parse_param(p) for p in (active, direction, mode, speed))
         for channel, a, d, m, s in zip(range(1, 4), *pars):
-            self.set_active(channel, a)
-            self.set_direction(channel, d)
-            self.set_mode(channel, m)
-            self.set_speed(channel, s, from_unit=from_unit)
+            self.set_channel(channel, a, d, m, s, from_unit)
+        pass
+
+    def set_channel(
+        self,
+        channel,
+        active=None,
+        direction=None,
+        mode=None,
+        speed=None,
+        from_unit=None,
+    ):
+        self.set_direction(channel, direction)
+        self.set_mode(channel, mode)
+        self.set_speed(channel, speed, from_unit=from_unit)
+        self.set_active(channel, active)
         pass
 
     def set_active(self, channel, active=None):
@@ -238,6 +255,10 @@ class RegloICC:
         :type e: int
         :param e:
             Exponent.
+        :type from_unit: str
+        :param from_unit:
+            If specified, `flowrate` is converted from the given unit to mL/min.
+            Format as `"vol/time"` where `vol = {mL, uL}`, `time = {hr, min, s}`.
 
         Note
         ----
@@ -257,7 +278,7 @@ class RegloICC:
             return self.set_flowrate(channel, *mmmmse, from_unit=None)
 
         cmd = f"f{flowrate:04d}{s}{e}"
-        print(cmd)
+        # print(cmd)
         return self.fwrite_receive(channel, cmd)
 
     def get_flowrate(self, channel):
@@ -303,7 +324,7 @@ def flux2mmmmse(flowrate, from_unit="mL/min"):
     s = sign(flow_mL_min - 1)
     e = 0
     flow_scaled = flow_mL_min * 10 ** (-s * e)
-    while not (1 <= flow_scaled < 10):
+    while not (1 <= flow_scaled < 10) and flow_mL_min != 0:
         e += 1
         flow_scaled = flow_mL_min * 10 ** (-s * e)
     flow_scaled *= 1000
