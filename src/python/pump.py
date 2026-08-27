@@ -12,7 +12,7 @@ pump = RegloICC('COM3') # Replace 'COM5' with your actual COM port
 # Start channel 3
 
 pump.start_channel(channel)
-v, s, e = velocity_converter_mu(50,time='min')
+v, s, e = microflux2mmmmse(50,unit='min')
 pump.set_direction(1, 0)
 pump.set_mode(1, 1)
 pump.set_flowrate(1,v ,s, e)
@@ -40,27 +40,8 @@ import time
 
 from numpy import sign
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
-from serial.tools import list_ports
 
-
-def get_port(com=None):
-    """Get a COM port from a list of available ports or string."""
-    if com is None:
-        ports = list_ports.comports()
-        if not ports:
-            raise ValueError("No COM ports found. Please connect the pump.")
-
-        print("Available COM ports:")
-        for p, port in enumerate(ports):
-            print(f"{p}  {port.device}: {port.description}")
-        print("")
-
-        p = int(input("COM port not specified. Please select a port: "))
-        return ports[p].device
-    elif isinstance(com, str):
-        return com
-    else:
-        raise ValueError("Invalid COM port spec. Use None or string.")
+from .utils import get_port
 
 
 class RegloICC:
@@ -71,14 +52,7 @@ class RegloICC:
     In the case herein, 3 channels are being independently controlled.
     """
 
-    def __init__(
-        self,
-        com=None,
-        active=False,
-        direction=0,
-        mode=1,
-        speed=0,
-    ):
+    def __init__(self, com=None, active=False, direction=0, mode=1, speed=0):
         """Initialize the pump and set up the serial connection."""
         self.com = get_port(com)
         # Open serial port with data format corresponding to the RegloICC pump
@@ -303,7 +277,7 @@ class RegloICC:
 
 
 def flux2mmmmse(flowrate, from_unit="mL/min"):
-    """Convert flowrate (flux) from mL/min to mmmmse format.
+    """Convert flowrate (flux) from vol/time to mmmmse format.
 
     :param flowrate:
     :param from_unit:
@@ -313,10 +287,10 @@ def flux2mmmmse(flowrate, from_unit="mL/min"):
         Flow rate tuple `(mmmm, "-", exponent)`.
     """
     v_unit, t_unit = from_unit.split("/", 1)
-    time_factors = {"s": 1 / 60, "min": 1, "hr": 60}
-    vol_factors = {"uL": 1e-3, "mL": 1}
+    time_factors = {"s": 1 / 60, "min": 1, "hr": 60, "hour": 60}
+    vol_factors = {"uL": 1e-3, "µL": 1e-3, "mL": 1}
     if t_unit not in time_factors:
-        raise ValueError("Invalid time unit. Use 's' min' or 'hr'.")
+        raise ValueError("Invalid time unit. Use 's', min' or 'hr'.")
     if v_unit not in vol_factors:
         raise ValueError("Invalid volume unit. Use 'uL' or 'mL'.")
     flow_mL_min = flowrate * vol_factors[v_unit] / time_factors[t_unit]
@@ -333,27 +307,15 @@ def flux2mmmmse(flowrate, from_unit="mL/min"):
     return (mmmm, "-" if s == -1 else "+", e)
 
 
-def velocity_converter_mu(speed: float, unit="hour"):
+def microflux2mmmmse(flowrate: float, unit="hour"):
     """Convert flow rate from μL/unit to mL/min in `mmmmse` format.
 
-    :param speed:
+    :param flowrate:
     :param unit:
 
     :rtype: tuple[int, str, int]
     :returns:
         Flow rate tuple `(mmmm, "-", exponent)`.
     """
-    # Convert to minutes if needed
-    minutes_per = {"min": 1, "hour": 60}
-    if unit not in minutes_per:
-        raise ValueError("Invalid time unit. Use 'min' or 'hour'.")
 
-    flow_uL_min = speed / minutes_per[unit]
-
-    for exponent in range(1, 4):
-        scaled = flow_uL_min * 10**exponent
-        if abs(scaled - round(scaled)) < 1e-6:
-            return int(round(scaled)), "-", exponent
-
-    # Default to exponent 3
-    return int(round(flow_uL_min * 1000)), "-", 3
+    return flux2mmmmse(flowrate, from_unit=f"uL/{unit}")

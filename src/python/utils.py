@@ -3,8 +3,10 @@
 import os
 from datetime import datetime
 from pathlib import Path
+
 import xmltodict
 import yaml
+from serial.tools import list_ports
 
 DIR_DEFAULT = "~/Desktop/MM-Images"
 
@@ -56,3 +58,23 @@ def parse_metadata(path, save_yaml=False):
     if save_yaml:
         path_out.write_text(yaml_str)
     return yaml_str
+
+
+def get_port(com=None):
+    """Get a COM port from a list of available ports or string."""
+    if com is None:
+        ports = list_ports.comports()
+        if not ports:
+            raise ValueError("No COM ports found. Please connect the pump.")
+
+        print("Available COM ports:")
+        for p, port in enumerate(ports):
+            print(f"{p}  {port.device}: {port.description}")
+        print("")
+
+        p = int(input("COM port not specified. Please select a port: "))
+        return ports[p].device
+    elif isinstance(com, str):
+        return com
+    else:
+        raise ValueError("Invalid COM port spec. Use None or string.")
