@@ -12,10 +12,10 @@ pump = RegloICC('COM3') # Replace 'COM5' with your actual COM port
 # Start channel 3
 
 pump.start_channel(channel)
-v, s, e = microflux2mmmmse(50,unit='min')
+mmmm, sgn, e = flux2mmmmse(50, from_unit="uL/min")
 pump.set_direction(1, 0)
 pump.set_mode(1, 1)
-pump.set_flowrate(1,v ,s, e)
+pump.set_flowrate(1, mmmm, sgn, e)
 print(pump.get_flowrate(1))
 pump.start_channel(1)
 time.sleep(10)
@@ -305,17 +305,3 @@ def flux2mmmmse(flowrate, from_unit="mL/min"):
     mmmm = int(min(round(flow_scaled), 9999))
 
     return (mmmm, "-" if s == -1 else "+", e)
-
-
-def microflux2mmmmse(flowrate: float, unit="hour"):
-    """Convert flow rate from μL/unit to mL/min in `mmmmse` format.
-
-    :param flowrate:
-    :param unit:
-
-    :rtype: tuple[int, str, int]
-    :returns:
-        Flow rate tuple `(mmmm, "-", exponent)`.
-    """
-
-    return flux2mmmmse(flowrate, from_unit=f"uL/{unit}")
