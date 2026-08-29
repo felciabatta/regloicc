@@ -11,6 +11,10 @@ from serial.tools import list_ports
 DIR_DEFAULT = "~/Desktop/MM-Images"
 
 
+def parse_none(arg, default):
+    return default if arg is None else arg
+
+
 def is_image_present(dir_parent, img_name):
     full_path = os.path.join(dir_parent, img_name)
     if os.path.isfile(full_path):
