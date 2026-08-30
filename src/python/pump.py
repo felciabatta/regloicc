@@ -48,23 +48,24 @@ CR = "\r"
 LF = "\n"
 SP = " "
 VB = "|"
+CRLF = CR + LF
+AT = "@"
+CARET = "^"
 
-# COMMUNICATIONS MANAGEMENT
-CHN_ADR = "~"
-EVT_MSG = "xE"
-GET_VERSION = "x!"
+# DATA CHARACTERS
+SUCCESSFULL = "*"
+UNSUCCESSFULL = "#"
+NEGATIVE = "–"
+POSITIVE = "+"
 
-# PUMP DRIVE
-START = "H"
-STOP = "I"
-PAUSE = "xI"
-GET_DIR = "xD"
 CW = "J"
 CCW = "K"
-GET_ERR = "xe"
 
-# OPERATIONAL MODE & SETTINGS
-GET_MODE = "xM"
+ERR_CHN_SETTING = NEGATIVE
+ERR_CYCLE_ZERO = "C"
+ERR_MAX_RATE = "R"
+ERR_MAX_VOL = "V"
+
 MODE_RPM = "L"
 MODE_RATE = "M"
 MODE_VOL_RATE = "O"
@@ -73,49 +74,202 @@ MODE_VOL_PAUSE = "Q"
 MODE_TIME = "N"
 MODE_TIME_PAUSE = "P"
 
-VAL_RPM = "S"
-VAL_RATE_VOL_TIME = "f"
-VAL_VOL = "v"
-VAL_RUN_TIME = "xT"
-VAL_PAUSE_TIME = "xP"
-VAL_CYCLE_COUNT = r"\""
-GET_MAX_RATE = "?"
-GET_MAX_RATE_CALIBRATED = "!"
-GET_TIME_VOL_RATE = "xv"
-GET_TIME_VOL_RPM = "xw"
+PUMP_RUNNING = POSITIVE
+PUMP_STOPPED = NEGATIVE
 
+FS_OPEN = POSITIVE
+FS_GROUNDED = NEGATIVE
+
+STOPPED_PUMP_COMPLETE = "A"
+STOPPED_CALI_COMPLETE = "B"
+STOPPED_MANUAL = "1"
+STOPPED_OVERHEAT = "2"
+STOPPED_OVERCURRENT = "3"
+CSTATUS_PUMPING = "A"
+CSTATUS_PAUSED_BTWN_CYCLES = "B"
+CSTATUS_STOPPED = "C"
+CSTATUS_CALI_PUMPING = "D"
+CSTATUS_CALI_PENDING = "E"
+
+
+# 1.0 COMMUNICATIONS MANAGEMENT
+GET_CHN_ADR = "~"  # 1.1
+SET_CHN_ADR = GET_CHN_ADR  # 1.2
+GET_EVT_MSG = "xE"  # 1.3
+SET_EVT_MSG = GET_EVT_MSG  # 1.4
+GET_SERIAL_VER = "x!"  # 1.5
+
+# 2.0 PUMP DRIVE
+SET_START = "H"  # 2.1
+SET_STOP = "I"  # 2.2
+SET_PAUSE = "xI"  # 2.3
+GET_DIR = "xD"  # 2.4
+SET_CW = CW  # 2.5
+SET_CCW = CCW  # 2.6
+GET_DRIVE_ERR = "xe"  # 2.7
+
+# 3.0 OPERATIONAL MODE & SETTINGS
+GET_MODE = "xM"  # 3.1
+SET_MODE_RPM = MODE_RPM  # 3.2
+SET_MODE_RATE = MODE_RATE  # 3.3
+SET_MODE_VOL_RATE = MODE_VOL_RATE  # 3.4
+SET_MODE_VOL_TIME = MODE_VOL_TIME  # 3.5
+SET_MODE_VOL_PAUSE = MODE_VOL_PAUSE  # 3.6
+SET_MODE_TIME = MODE_TIME  # 3.7
+SET_MODE_TIME_PAUSE = MODE_TIME_PAUSE  # 3.8
+GET_RATE_OTHER = "xf"  # 3.9
+SET_RATE_OTHER = GET_RATE_OTHER  # 3.10
+GET_RPM = "S"  # 3.11
+SET_RPM = GET_RPM  # 3.12
+GET_RATE = "f"  # 3.13
+SET_RATE = GET_RATE  # 3.14
+GET_VOL = "v"  # 3.15
+SET_VOL = GET_VOL  # 3.16
+GET_RUN_TIME = "xT"  # 3.17
+SET_RUN_TIME = GET_RUN_TIME  # 3.18
+GET_PAUSE_TIME = "xP"  # 3.19
+SET_PAUSE_TIME = GET_PAUSE_TIME  # 3.20
+GET_CYCLE_COUNT = r"\""  # 3.21
+SET_CYCLE_COUNT = GET_CYCLE_COUNT  # 3.22
+GET_MAX_RATE = "?"  # 3.23
+GET_MAX_RATE_CALIBRATED = "!"  # 3.24
+GET_DISPENSE_TIME_RATE = "xv"  # 3.25
+GET_DISPENSE_TIME_RPM = "xw"  # 3.26
+
+# 4.0 CONFIGURATION
+GET_DIAMETER = "+"  # 4.1
+SET_DIAMETER = GET_DIAMETER  # 4.2
+GET_BACKSTEP = "%"  # 4.3
+SET_BACKSTEP = GET_BACKSTEP  # 4.4
+RESET_ALL_DATA = "0"  # 4.5
+
+# 5.0 CALIBRATION
+GET_CAL_DIR = "xR"  # 5.1
+SET_CAL_DIR = GET_CAL_DIR  # 5.2
+GET_TARGET_VOL = "xU"  # 5.3
+SET_TARGET_VOL = GET_TARGET_VOL  # 5.4
+SET_ACTUAL_VOL = "xV"  # 5.5
+GET_CAL_TIME = "xW"  # 5.6
+SET_CAL_TIME = GET_CAL_TIME  # 5.7
+GET_RUNTIME_SINCE = "xX"  # 5.8
+SET_CAL_START = "xY"  # 5.9
+SET_CAL_CANCEL = "xZ"  # 5.10
+
+# 6.0 SYSTEM
+GET_FIRMWARE = "("  # 6.1
+SET_FACTORY_ROLLVOL = "xt"  # 6.2
+SAVE_SET_ROLLVOL = "xs"  # 6.3
+RESET_ROLLVOL = "xu"  # 6.4
+SET_PUMP_NAME = "xN"  # 6.5
+GET_SERIALNO = "xS"  # 6.6
+SET_SERIALNO = GET_SERIALNO  # 6.7
+GET_LANG = "xL"  # 6.8
+SET_LANG = GET_LANG  # 6.9
+GET_CHANNELNO = "xA"  # 6.10
+SET_CHANNELNO = GET_CHANNELNO  # 6.11
+GET_ROLLERNO = "xB"  # 6.12
+SET_ROLLERNO = GET_ROLLERNO  # 6.13
+GET_REV_SINCE_RESET = "xC"  # 6.14
+GET_VOL_SINCE_RESET = "xG"  # 6.15
+GET_TIME_SINCE_RESET = "xJ"  # 6.16
+SET_GUI_ON = "A"  # 6.17
+SET_GUI_OFF = "B"  # 6.18
+SET_DISPLAY_NUM = "D"  # 6.19
+SET_DISPLAY_CHR = "DA"  # 6.20
+GET_RUN_STATUS = "E"  # 6.21
+GET_MODEL_INFO = "#"  # 6.22
+GET_HEAD_CODE = ")"  # 6.23
+SET_HEAD_CODE = GET_HEAD_CODE  # 6.24
+GET_TIME_10THS = "V"  # 6.25
+SET_TIME_10THS = GET_TIME_10THS  # 6.26
+SET_TIME_MINS = "VM"  # 6.27
+SET_TIME_HRS = "VH"  # 6.28
+GET_ROLLSTEP_LO = "U"  # 6.29
+SET_ROLLSTEP_LO = GET_ROLLSTEP_LO  # 6.30
+GET_ROLLSTEP_HI = "u"  # 6.31
+SET_ROLLSTEP_HI = GET_ROLLSTEP_HI  # 6.32
+GET_ROLLVOL_CAL = "r"  # 6.33
+SET_ROLLVOL_CAL = GET_ROLLVOL_CAL  # 6.34
+RESET_CAL = "000000"  # 6.35
+GET_PAUSE_10THS = "T"  # 6.36
+SET_PAUSE_10THS = GET_PAUSE_10THS  # 6.37
+SET_PAUSE_MINS = "TM"  # 6.38
+SET_PAUSE_HRS = "TH"  # 6.39
+GET_VOLALL_SINCE_RESET = ":"  # 6.40
+SAVE_SET_ALL = "*"  # 6.41
+GET_FS_STATUS = "C"  # 6.42
+
+# TUBE IDs
+TUBE_IDS = {
+    0: 0.13,
+    1: 0.19,
+    2: 0.25,
+    3: 0.38,
+    4: 0.44,
+    5: 0.51,
+    6: 0.57,
+    7: 0.64,
+    8: 0.76,
+    9: 0.89,
+    10: 0.95,
+    11: 1.02,
+    12: 1.09,
+    13: 1.14,
+    14: 1.22,
+    15: 1.30,
+    16: 1.42,
+    17: 1.52,
+    18: 1.65,
+    19: 1.75,
+    20: 1.85,
+    21: 2.06,
+    22: 2.29,
+    23: 2.54,
+    24: 2.79,
+    25: 3.17,
+}
+
+# STATUS RESPONSE
+STATUS_DESC_KEY = {
+    SUCCESSFULL: "The command was executed successfully.",
+    UNSUCCESSFULL: "The command was not executed successfully.",
+    NEGATIVE: "Negative. See command definition for context.",
+    POSITIVE: "Positive. See command definition for context.",
+}
+
+# DISCRETETYPE CONSTANTS
+DT_ZERO = uint()
+
+DT1_MAX = 9999
+
+DT2_WIDTH = 4
+DT2_MAX = 9999
+
+DT3_WIDTH = 6
+DT3_MAX = 999999
+
+DT4_WIDTH = 10
+DT4_MAX = 2**32 - 1  # 4,294,967,295; ie max uint32
+
+DT5_WIDTH = 3
+DT5_MAX = 999
+
+DT6_WIDTH = 5
+DT6_MAX = 99999
+
+# VOLTYPE CONSTANTS
 VOLTYPE_MIN = 1.000e-9
 VOLTYPE_MAX = 9.999e9
 TIMETYPE_MAX = 35964000
 
-# CONFIGURATION
-
-VAL_DIAMATER = "+"
-VAL_BACKSTEP = "%"
-RESET_ALL_DATA = "0"
-
-# CALIBRATION
-
-# SYSTEM
-
-# TUBE IDs
-
-# STATUS RESPONSE
-RESPONSE_SUCCESSFULL = "*"
-RESPONSE_UNSUCCESSFULL = "#"
-RESPONSE_NEGATIVE = "–"
-RESPONSE_POSITIVE = "+"
-
-# KEYS
+# DATATYPE KEYS
 DIR_KEY = {
+    CCW: CCW,
+    CW: CW,
     +1: CCW,
     -1: CW,
     "ccw": CCW,
     "cw": CW,
-    "CCW": CCW,
-    "CW": CW,
-    CCW: CCW,
-    CW: CW,
 }
 STR_ENGLISH = "english"
 STR_FRENCH = "french"
@@ -174,6 +328,12 @@ ISO_LANG_KEY = {
 """Based on ISO 639 language codes"""
 
 
+# EVENT MESSAGES
+EVT_ID = CARET
+EVT_CHANNEL_STOP = "X"
+EVT_CHANNEL_UPDATE = "U"
+
+
 class RegloDataType:
     def __init__(self, value, width) -> None:
         self._value = value
@@ -222,6 +382,7 @@ class DirectionType(RegloDataType):
     """A single character indicating direction."""
 
     def __init__(self, value=+1) -> None:
+        value = value.lower() if isinstance(value, str) else value
         super().__init__(DIR_KEY[value], width=uint(1))
 
     def __str__(self) -> str:
@@ -234,10 +395,14 @@ class DirectionType(RegloDataType):
 
 class DiscreteType(RegloDataType):
     def __init__(
-        self, value: uint | int = uint(), width: uint | int = 1, vmax=None
+        self,
+        value: uint | int = DT_ZERO,
+        width: uint | int = 1,
+        vmin: int | uint = DT_ZERO,
+        vmax: int | uint | None = None,
     ) -> None:
-        self._vmin = uint()
-        self._vmax = vmax if vmax is None else uint(vmax)
+        self._vmin = uint(vmin)
+        self._vmax = uint(vmax) if isinstance(vmax, int) else vmax
         _value = uint(clip(value, self._vmin, self._vmax))
         super().__init__(_value, width)
         pass
@@ -273,9 +438,9 @@ class DiscreteType1(DiscreteType):
     - Range: 0 to 9999
     """
 
-    def __init__(self, value=uint()) -> None:
+    def __init__(self, value=DT_ZERO) -> None:
         w = clip(len(str(value)), 1, 4)
-        super().__init__(value, width=w, vmax=9999)
+        super().__init__(value, width=w, vmax=DT1_MAX)
 
 
 class DiscreteType2(DiscreteType):
@@ -288,8 +453,8 @@ class DiscreteType2(DiscreteType):
     - Range: 0 to 9999
     """
 
-    def __init__(self, value=uint()) -> None:
-        super().__init__(value, width=4, vmax=9999)
+    def __init__(self, value=DT_ZERO) -> None:
+        super().__init__(value, width=DT2_WIDTH, vmax=DT2_MAX)
 
 
 class DiscreteType3(DiscreteType):
@@ -302,8 +467,8 @@ class DiscreteType3(DiscreteType):
     - Range: 0 to 999999
     """
 
-    def __init__(self, value=uint()) -> None:
-        super().__init__(value, width=6, vmax=999999)
+    def __init__(self, value=DT_ZERO) -> None:
+        super().__init__(value, width=DT3_WIDTH, vmax=DT3_MAX)
 
 
 class DiscreteType4(DiscreteType):
@@ -316,8 +481,8 @@ class DiscreteType4(DiscreteType):
     - Range: 0 to 4294967295 (ie uint32)
     """
 
-    def __init__(self, value=uint()) -> None:
-        super().__init__(value, width=10, vmax=4294967295)
+    def __init__(self, value=DT_ZERO) -> None:
+        super().__init__(value, width=DT4_WIDTH, vmax=DT4_MAX)
 
 
 class DiscreteType5(DiscreteType):
@@ -329,8 +494,8 @@ class DiscreteType5(DiscreteType):
     - Range: 0 to 999
     """
 
-    def __init__(self, value=uint()) -> None:
-        super().__init__(value, width=3, vmax=999)
+    def __init__(self, value=DT_ZERO) -> None:
+        super().__init__(value, width=DT5_WIDTH, vmax=DT5_MAX)
 
 
 class DiscreteType6(DiscreteType):
@@ -343,8 +508,8 @@ class DiscreteType6(DiscreteType):
     - Range: 0 to 99999
     """
 
-    def __init__(self, value=uint()) -> None:
-        super().__init__(value, width=5, vmax=99999)
+    def __init__(self, value=DT_ZERO) -> None:
+        super().__init__(value, width=DT6_WIDTH, vmax=DT6_MAX)
 
 
 class FractionalType(RegloDataType):
@@ -402,27 +567,44 @@ class VolumeType(RegloDataType):
 
 
 class TimeType(DiscreteType):
+    """Right-justified sequence of numeric characters representing time.
+
+    :param: value:
+        Unsignedinteger representing time, where `tt.seconds == value * unit`.
+    :param: width:
+        Unsignedinteger representing allocating width of `str(tt)`.
+    :param: unit:
+        Number of seconds represented by one integer unit.
+    """
+
     def __init__(
-        self, value: uint | int = uint(), width: uint | int = 1
+        self, value: uint | int = uint(), width: uint | int = 1, unit=1.0
     ) -> None:
+        self._unit = unit  # seconds
         super().__init__(value, width=width, vmax=TIMETYPE_MAX)
 
     @property
-    def hours(self):
-        return self._value / 36000
-
-    @property
-    def minutes(self):
-        return self._value / 600
+    def unit(self):
+        return self._unit
 
     @property
     def seconds(self):
-        return self._value / 10
+        return float(self._value * self._unit)
+
+    @property
+    def minutes(self):
+        return float(self.seconds / 60)
+
+    @property
+    def hours(self):
+        return float(self.hours / 60)
 
     def __repr__(self) -> str:
         name = type(self).__name__
-        args = f", width={self._width}" if (name == TimeType.__name__) else ""
-        return f"{name}({self._value}{args})"
+        width_arg = (
+            f", width={self._width}" if (name == TimeType.__name__) else ""
+        )
+        return f"{name}({self._value}{width_arg}, unit={self.unit})"
 
 
 class TimeType1(TimeType):
@@ -432,13 +614,13 @@ class TimeType1(TimeType):
     Unused digits are not returned.
 
     - Width: 1 to 8
-    - Units: 0.1 second
+    - Units: 0.1 second (default)
     - Range: 0 to 35,964,000 (0 to 999 hr)
     """
 
-    def __init__(self, value=uint()) -> None:
+    def __init__(self, value=DT_ZERO, unit=0.1) -> None:
         w = clip(len(str(value)), 1, 8)
-        super().__init__(value, width=w)
+        super().__init__(value, width=w, unit=unit)
 
 
 class TimeType2(TimeType):
@@ -449,12 +631,12 @@ class TimeType2(TimeType):
     Unused digits to the left are filled with zeros.
 
     - Width: 8
-    - Units: 0.1 second
+    - Units: 0.1 second (default)
     - Range: 0 to 35,964,000 (0 to 999 hr)
     """
 
-    def __init__(self, value=uint()) -> None:
-        super().__init__(value, width=8)
+    def __init__(self, value=DT_ZERO, unit=0.1) -> None:
+        super().__init__(value, width=8, unit=unit)
 
 
 class StringType(RegloDataType):
@@ -479,7 +661,7 @@ class StringType(RegloDataType):
 
         isvalid_chr = value.isascii() and not ("\r" in value or " " in value)
         err_chr = (
-            "StringType can only contain ASCII characters "
+            f"{type(self).__name__} can only contain ASCII characters"
             "(excluding `\\r`, ` `)"
         )
         assert isvalid_chr, err_chr
@@ -488,7 +670,14 @@ class StringType(RegloDataType):
         pass
 
     def __repr__(self) -> str:
-        return f"StringType({self._value!r})"
+        return f"{type(self).__name__}({self._value!r})"
+
+
+class CharType(StringType):
+    def __init__(self, value) -> None:
+        w = len(value)
+        assert w == 1, "CharType must be a single character"
+        super().__init__(value)
 
 
 class LanguageType(DiscreteType):
@@ -523,6 +712,204 @@ class LanguageType(DiscreteType):
         return f"LanguageType({self.name.capitalize()!r})"
 
 
+class AddressType(DiscreteType):
+    """A single character representing a pump or channel address.
+
+    - Width: 1
+    - Range: 1 to 8
+    """
+
+    def __init__(self, value=1) -> None:
+        super().__init__(value, width=1, vmin=1, vmax=8)
+
+    def __repr__(self) -> str:
+        return f"AddressType({self._value})"
+
+
+class DiamaterType(RegloDataType):
+    def __init__(self, value: float, unit="mm") -> None:
+        value = round(clip(value, 0.0, None), 2)
+        self.unit = unit
+        super().__init__(value, width=7)
+
+    def __str__(self) -> str:
+        return f"{self._value:.2f} {self.unit}"
+
+    def __repr__(self) -> str:
+        return f"DiameterType({self._value:.2f}, unit={self.unit!r})"
+
+
+class DeviceMessage:
+    def __init__(self) -> None:
+        pass
+
+    def __repr__(self) -> str:
+        return "DeviceMessage()"
+
+
+class StatusResponse(DeviceMessage):
+    def __init__(self, status: str, desc="") -> None:
+        assert len(status) == 1, "StatusResponse must be a single character"
+        self.status = status
+        self.desc = desc
+        pass
+
+    def __repr__(self) -> str:
+        name = type(self).__name__
+        args = f"{self!r}" if (name == StatusResponse.__name__) else ""
+        return f"{name}({args})"
+
+    def __str__(self) -> str:
+        return self.status
+
+    @classmethod
+    def from_str(cls, s: str):
+        match s:
+            case r if r == SUCCESSFULL:
+                return StatusSuccessfull()
+            case r if r == UNSUCCESSFULL:
+                return StatusUnsuccessfull()
+            case r if r == NEGATIVE:
+                return StatusNegative()
+            case r if r == POSITIVE:
+                return StatusPositive()
+            case _:
+                return StatusUnknown(s)
+
+
+class StatusUnknown(StatusResponse):
+    def __init__(self, status: str) -> None:
+        super().__init__(status, desc="Unknown status.")
+
+
+class StatusSuccessfull(StatusResponse):
+    def __init__(self) -> None:
+        stat = SUCCESSFULL
+        desc = STATUS_DESC_KEY[stat]
+        return super().__init__(stat, desc)
+
+
+class StatusUnsuccessfull(StatusResponse):
+    def __init__(self) -> None:
+        stat = UNSUCCESSFULL
+        desc = STATUS_DESC_KEY[stat]
+        return super().__init__(stat, desc)
+
+
+class StatusNegative(StatusResponse):
+    def __init__(self, desc=None) -> None:
+        stat = NEGATIVE
+        desc = parse_none(desc, STATUS_DESC_KEY[stat])
+        return super().__init__(stat, desc)
+
+
+class StatusPositive(StatusResponse):
+    def __init__(self, desc=None) -> None:
+        stat = POSITIVE
+        desc = parse_none(desc, STATUS_DESC_KEY[stat])
+        return super().__init__(stat, desc)
+
+
+class DataMessage(DeviceMessage):
+    def __init__(self, *args, begin="", delim=SP, end=CRLF) -> None:
+        self.args = args
+        self.begin = begin
+        self.delim = delim
+        self.end = end
+        pass
+
+    def __len__(self):
+        return len(self.args)
+
+    def __str__(self) -> str:
+        args = self.delim.join(str(a) for a in self.args)
+        return f"{self.begin}{args}{self.end}"
+
+    def __repr__(self) -> str:
+        optargs = [repr(a) for a in self.args]
+        kws = f"begin={self.begin!r}, delim={self.delim!r}, end={self.end!r}"
+        return f"DataMessage({", ".join(optargs + [kws])})"
+
+
+class DataResponse(DataMessage):
+    def __init__(self, *args) -> None:
+        super().__init__(*args, begin="", delim=SP, end=CRLF)
+        pass
+
+    def __repr__(self) -> str:
+        optargs = [repr(a) for a in self.args]
+        return f"DataResponse({", ".join(optargs)})"
+
+
+class EventMessage(DataMessage):
+    def __init__(self, code: str, *args) -> None:
+        self.code = code
+        begin = EVT_ID + self.code
+        super().__init__(*args, begin=begin, delim=VB, end=CRLF)
+
+    def __repr__(self) -> str:
+        args = [repr(self.code)]
+        optargs = [repr(a) for a in self.args]
+        return f"EventMessage({", ".join(args + optargs)})"
+
+
+class RequestMessage:
+    def __init__(
+        self,
+        addr: int | uint = 0,
+        end=CRLF,
+        response: None | DeviceMessage = None,
+    ) -> None:
+        assert 0 <= addr <= 8, f"Address must be in range 0–8; got {addr}"
+        self.addr = uint(addr)
+        self.end = end
+        self.response = response
+        pass
+
+    def write_to(self, serial: Serial):
+        return serial.write(str(self).encode())
+
+    def __call__(self, serial: Serial):
+        return self.write_to(serial)
+
+    def __str__(self) -> str:
+        return self.end
+
+    def __repr__(self) -> str:
+        return f"RequestMessage({int(self.addr)}, end={self.end!r})"
+
+
+class PumpAddressCommand(RequestMessage):
+    def __init__(
+        self, addr: int | uint = 1, response: None | StatusResponse = None
+    ) -> None:
+        assert 1 <= addr <= 8, f"Pump address must be in range 1–8; got {addr}"
+        return super().__init__(addr, end=CR, response=response)
+
+    def __str__(self) -> str:
+        return f"{AT}{self.addr}{self.end}"
+
+    def __repr__(self) -> str:
+        return f"PumpAddressCommand({int(self.addr)})"
+
+
+class DeviceCommand(RequestMessage):
+    def __init__(self, addr, code, *args) -> None:
+        self.code = code
+        self.args = args
+        return super().__init__(addr, end=CRLF)
+
+    def __str__(self) -> str:
+        params = VB.join(str(a) for a in self.args)
+        # [CRLF] required for termination
+        return f"{self.addr}{self.code}{params}{self.end}"
+
+    def __repr__(self) -> str:
+        args = [str(int(self.addr)), repr(self.code)]
+        optargs = [repr(a) for a in self.args]
+        return f"DeviceCommand({", ".join(args + optargs)})"
+
+
 class RegloICCChannel:
     def __init__(
         self, addr: int = 1, serial: None | str | Serial = None
@@ -535,9 +922,9 @@ class RegloICCChannel:
     def request(self, code, *args, addr=None, receive=False):
         """Send a request to the pump and (optionally) read the response."""
         addr = parse_none(addr, self.addr)
-        variables = "|".join(str(a) for a in args)
-        end = "\r"  # [CR] required for termination
-        command = f"{addr}{code}{variables}{end}".strip()
+        variables = VB.join(str(a) for a in args)
+        # [CR] required for termination
+        command = f"{addr}{code}{variables}{CRLF}"
         self.serial.write(command.encode())
         print(f"[RegloICC] Requested: {command}")
         if receive:
