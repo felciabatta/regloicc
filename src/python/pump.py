@@ -332,6 +332,24 @@ ISO_LANG_KEY = {
 EVT_ID = CARET
 EVT_CHANNEL_STOP = "X"
 EVT_CHANNEL_UPDATE = "U"
+STOPPED_DESC_KEY = {
+    STOPPED_PUMP_COMPLETE: "Pumping complete (expiration of timer or volume limit reached).",
+    STOPPED_CALI_COMPLETE: "Calibration pumping complete.",
+    STOPPED_MANUAL: "Manual (emergency) stop event (user presses stop button on the pump).",
+    STOPPED_OVERHEAT: "Over temperature condition.",
+    STOPPED_OVERCURRENT: "Over current condition.",
+}
+CSTATUS_DESC_KEY = {
+    CSTATUS_PUMPING: "Pumping",
+    CSTATUS_PAUSED_BTWN_CYCLES: "Paused between cycles",
+    CSTATUS_STOPPED: "Stopped",
+    CSTATUS_CALI_PUMPING: "Calibration pumping",
+    CSTATUS_CALI_PENDING: "Calibration pending (waiting for measured value to be entered)",
+}
+EVT_DESC_KEY = {
+    EVT_CHANNEL_STOP: STOPPED_DESC_KEY,
+    EVT_CHANNEL_UPDATE: CSTATUS_DESC_KEY,
+}
 
 
 class RegloDataType:
@@ -749,7 +767,7 @@ class DeviceMessage:
 
 class StatusResponse(DeviceMessage):
     def __init__(self, status: str, desc="") -> None:
-        assert len(status) == 1, "StatusResponse must be a single character"
+        assert len(status) == 1, "StatusResponse must be a single character."
         self.status = status
         self.desc = desc
         pass
@@ -775,6 +793,13 @@ class StatusResponse(DeviceMessage):
                 return StatusPositive()
             case _:
                 return StatusUnknown(s)
+
+    @classmethod
+    def read(cls, serial: Serial):
+        s = serial.read(1).decode()
+        assert s.isascii(), "Encountered non-ASCII response."
+        assert len(s) == 1, "Encountered multi-character response."
+        return cls.from_str(s)
 
 
 class StatusUnknown(StatusResponse):
@@ -811,46 +836,144 @@ class StatusPositive(StatusResponse):
 
 
 class DataMessage(DeviceMessage):
-    def __init__(self, *args, begin="", delim=SP, end=CRLF) -> None:
-        self.args = args
-        self.begin = begin
-        self.delim = delim
-        self.end = end
+    # DEFAULTS
+    BEGIN = ""
+    SEP = SP
+    END = CRLF
+
+    def __init__(self, *args, begin=BEGIN, sep=SEP, end=END) -> None:
+        self._args = args
+        self._begin = begin
+        self._sep = sep
+        self._end = end
         pass
+
+    @property
+    def args(self):
+        return self._args
+
+    @property
+    def begin(self):
+        return self._begin
+
+    @property
+    def sep(self):
+        return self._sep
+
+    @property
+    def end(self):
+        return self._end
 
     def __len__(self):
         return len(self.args)
 
     def __str__(self) -> str:
-        args = self.delim.join(str(a) for a in self.args)
+        args = self.sep.join(str(a) for a in self.args)
         return f"{self.begin}{args}{self.end}"
 
     def __repr__(self) -> str:
         optargs = [repr(a) for a in self.args]
-        kws = f"begin={self.begin!r}, delim={self.delim!r}, end={self.end!r}"
+        kws = f"begin={self.begin!r}, sep={self.sep!r}, end={self.end!r}"
         return f"DataMessage({", ".join(optargs + [kws])})"
+
+    @classmethod  # NOTE: specialise for subclass call signature
+    def parse(cls, s, begin: int | str, sep: str, end: int | str):
+        """Parse message string and return `cls_args`, `cls_kwargs`"""
+        begin = s[:begin] if isinstance(begin, int) else begin
+        end = s[-end:] if isinstance(end, int) else end
+        str_data = s.rstrip(end).lstrip(begin)
+        cls_kwargs = dict(begin=begin, sep=sep, end=end)
+        cls_args = str_data.split(sep)
+        return cls_args, cls_kwargs
+
+    @classmethod  # NOTE: no need to specialise
+    def from_str(cls, s: str, *args, **kwargs):
+        """Parse message string and convert to a DataMessage type"""
+        cls_args, cls_kwargs = cls.parse(s, *args, **kwargs)
+        return cls(*cls_args, **cls_kwargs)
+
+    @classmethod
+    def from_read(cls, serial: Serial, expected=None, *args, **kwargs):
+        """Read serial message and convert to a DataMessage type"""
+        END = kwargs["end"] if "end" in kwargs else cls.END
+        expected = parse_none(expected, END)
+        s = serial.read_until(expected.encode("ascii")).decode()
+        return cls.from_str(s, *args, **kwargs)
 
 
 class DataResponse(DataMessage):
+    """One or more data parameter values which are delimited by spaces.
+
+    A data response is sent when parameter values must be provided in response
+    to a request message.
+
+    - Data Parameter N: A data value returned by the pump.
+      The format of each data parameter is defined by the request message that
+       a data response message is sent in response to.
+      See each request message definition for the definition associated data
+       response messages.
+    """
+
+    _begin = ""
+    _sep = SP
+    _end = CRLF
+
     def __init__(self, *args) -> None:
-        super().__init__(*args, begin="", delim=SP, end=CRLF)
-        pass
+        kwargs = dict(begin=self.begin, sep=self.sep, end=self.end)
+        return super().__init__(*args, **kwargs)
 
     def __repr__(self) -> str:
         optargs = [repr(a) for a in self.args]
-        return f"DataResponse({", ".join(optargs)})"
+        return f"{type(self).__name__}({", ".join(optargs)})"
+
+    @classmethod
+    def parse(cls, s):
+        cls_args, _ = super().parse(s, cls._begin, cls._sep, cls._end)
+        return cls_args, dict()
+
+    @classmethod
+    def from_read(cls, serial: Serial):
+        return super().from_read(serial, cls._end)
 
 
 class EventMessage(DataMessage):
-    def __init__(self, code: str, *args) -> None:
-        self.code = code
-        begin = EVT_ID + self.code
-        super().__init__(*args, begin=begin, delim=VB, end=CRLF)
+    _prefix = EVT_ID
+    _begin = 2
+    _sep = VB
+    _end = CRLF
+    _expected = _end
+
+    def __init__(self, code, *args) -> None:
+        self._code = code
+        cls = type(self)
+        kwargs = dict(begin=self.begin, sep=cls._sep, end=cls._end)
+        super().__init__(*args, **kwargs)
+        del self._begin
+
+    @property
+    def begin(self):
+        return self._prefix + self._code
+
+    @property
+    def code(self):
+        return self._code
 
     def __repr__(self) -> str:
         args = [repr(self.code)]
         optargs = [repr(a) for a in self.args]
         return f"EventMessage({", ".join(args + optargs)})"
+
+    @classmethod
+    def parse(cls, s):
+        cls_args, cls_kwargs = super().parse(
+            s, begin=cls._begin, sep=cls._sep, end=cls._end
+        )
+        code = cls_kwargs["begin"][-1]
+        return (code, *cls_args), dict()
+
+    @classmethod
+    def from_read(cls, serial: Serial):
+        return super().from_read(serial, cls._expected)
 
 
 class RequestMessage:
@@ -858,7 +981,7 @@ class RequestMessage:
         self,
         addr: int | uint = 0,
         end=CRLF,
-        response: None | DeviceMessage = None,
+        response: None | StatusResponse | DataResponse = None,
     ) -> None:
         assert 0 <= addr <= 8, f"Address must be in range 0–8; got {addr}"
         self.addr = uint(addr)
@@ -955,7 +1078,7 @@ class RegloICC:
     """RegloICC pump control.
 
     Change the size of 'direction', 'mode' and 'speed' according to the total
-     number of channels to control.
+    number of channels to control.
     In the case herein, 3 channels are being independently controlled.
     """
 
