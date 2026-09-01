@@ -67,7 +67,7 @@ ERR_MAX_RATE = "R"
 ERR_MAX_VOL = "V"
 
 MODE_RPM = "L"
-MODE_RATE = "M"
+MODE_FLOWRATE = "M"
 MODE_VOL_RATE = "O"
 MODE_VOL_TIME = "G"
 MODE_VOL_PAUSE = "Q"
@@ -111,7 +111,7 @@ GET_DRIVE_ERR = "xe"  # 2.7
 # 3.0 OPERATIONAL MODE & SETTINGS
 GET_MODE = "xM"  # 3.1
 SET_MODE_RPM = MODE_RPM  # 3.2
-SET_MODE_RATE = MODE_RATE  # 3.3
+SET_MODE_FLOWRATE = MODE_FLOWRATE  # 3.3
 SET_MODE_VOL_RATE = MODE_VOL_RATE  # 3.4
 SET_MODE_VOL_TIME = MODE_VOL_TIME  # 3.5
 SET_MODE_VOL_PAUSE = MODE_VOL_PAUSE  # 3.6
@@ -121,8 +121,8 @@ GET_RATE_OTHER = "xf"  # 3.9
 SET_RATE_OTHER = GET_RATE_OTHER  # 3.10
 GET_RPM = "S"  # 3.11
 SET_RPM = GET_RPM  # 3.12
-GET_RATE = "f"  # 3.13
-SET_RATE = GET_RATE  # 3.14
+GET_FLOWRATE = "f"  # 3.13
+SET_FLOWRATE = GET_FLOWRATE  # 3.14
 GET_VOL = "v"  # 3.15
 SET_VOL = GET_VOL  # 3.16
 GET_RUN_TIME = "xT"  # 3.17
@@ -131,9 +131,9 @@ GET_PAUSE_TIME = "xP"  # 3.19
 SET_PAUSE_TIME = GET_PAUSE_TIME  # 3.20
 GET_CYCLE_COUNT = r"\""  # 3.21
 SET_CYCLE_COUNT = GET_CYCLE_COUNT  # 3.22
-GET_MAX_RATE = "?"  # 3.23
-GET_MAX_RATE_CALIBRATED = "!"  # 3.24
-GET_DISPENSE_TIME_RATE = "xv"  # 3.25
+GET_MAX_FLOWRATE = "?"  # 3.23
+GET_MAX_FLOWRATE_CALIBRATED = "!"  # 3.24
+GET_DISPENSE_TIME_FLOWRATE = "xv"  # 3.25
 GET_DISPENSE_TIME_RPM = "xw"  # 3.26
 
 # 4.0 CONFIGURATION
@@ -141,7 +141,7 @@ GET_DIAMETER = "+"  # 4.1
 SET_DIAMETER = GET_DIAMETER  # 4.2
 GET_BACKSTEP = "%"  # 4.3
 SET_BACKSTEP = GET_BACKSTEP  # 4.4
-RESET_ALL_DATA = "0"  # 4.5
+RESET_CONFIG_DATA = "0"  # 4.5
 
 # 5.0 CALIBRATION
 GET_CAL_DIR = "xR"  # 5.1
@@ -197,7 +197,7 @@ SET_PAUSE_MINS = "TM"  # 6.38
 SET_PAUSE_HRS = "TH"  # 6.39
 GET_VOLALL_SINCE_RESET = ":"  # 6.40
 SAVE_SET_ALL = "*"  # 6.41
-GET_FS_STATUS = "C"  # 6.42
+GET_FOOTSWITCH_STATUS = "C"  # 6.42
 
 # TUBE IDs
 TUBE_IDS = {
@@ -766,6 +766,8 @@ class DeviceMessage:
 
 
 class StatusResponse(DeviceMessage):
+    BYTES = 1
+
     def __init__(self, status: str, desc="") -> None:
         assert len(status) == 1, "StatusResponse must be a single character."
         self.status = status
@@ -782,6 +784,8 @@ class StatusResponse(DeviceMessage):
 
     @classmethod
     def from_str(cls, s: str):
+        assert s.isascii(), "Encountered non-ASCII response."
+        assert len(s) == 1, "Encountered multi-character response."
         match s:
             case r if r == SUCCESSFULL:
                 return StatusSuccessfull()
@@ -795,10 +799,8 @@ class StatusResponse(DeviceMessage):
                 return StatusUnknown(s)
 
     @classmethod
-    def read(cls, serial: Serial):
-        s = serial.read(1).decode()
-        assert s.isascii(), "Encountered non-ASCII response."
-        assert len(s) == 1, "Encountered multi-character response."
+    def from_read(cls, serial: Serial):
+        s = serial.read(cls.BYTES).decode()
         return cls.from_str(s)
 
 
@@ -837,11 +839,11 @@ class StatusPositive(StatusResponse):
 
 class DataMessage(DeviceMessage):
     # DEFAULTS
-    BEGIN = ""
-    SEP = SP
-    END = CRLF
+    _BEGIN = ""
+    _SEP = SP
+    _END = CRLF
 
-    def __init__(self, *args, begin=BEGIN, sep=SEP, end=END) -> None:
+    def __init__(self, *args, begin=_BEGIN, sep=_SEP, end=_END) -> None:
         self._args = args
         self._begin = begin
         self._sep = sep
@@ -895,7 +897,7 @@ class DataMessage(DeviceMessage):
     @classmethod
     def from_read(cls, serial: Serial, expected=None, *args, **kwargs):
         """Read serial message and convert to a DataMessage type"""
-        END = kwargs["end"] if "end" in kwargs else cls.END
+        END = kwargs["end"] if "end" in kwargs else cls._END
         expected = parse_none(expected, END)
         s = serial.read_until(expected.encode("ascii")).decode()
         return cls.from_str(s, *args, **kwargs)
@@ -938,14 +940,15 @@ class DataResponse(DataMessage):
 
 class EventMessage(DataMessage):
     _prefix = EVT_ID
+    _code = EVT_CHANNEL_UPDATE
     _begin = 2
     _sep = VB
     _end = CRLF
     _expected = _end
 
-    def __init__(self, code, *args) -> None:
-        self._code = code
+    def __init__(self, *args, code=None) -> None:
         cls = type(self)
+        self._code = parse_none(code, cls._code)
         kwargs = dict(begin=self.begin, sep=cls._sep, end=cls._end)
         super().__init__(*args, **kwargs)
         del self._begin
@@ -959,9 +962,9 @@ class EventMessage(DataMessage):
         return self._code
 
     def __repr__(self) -> str:
-        args = [repr(self.code)]
+        kws = [f"code={self.code!r}"]
         optargs = [repr(a) for a in self.args]
-        return f"EventMessage({", ".join(args + optargs)})"
+        return f"EventMessage({", ".join(optargs + kws)})"
 
     @classmethod
     def parse(cls, s):
@@ -969,28 +972,85 @@ class EventMessage(DataMessage):
             s, begin=cls._begin, sep=cls._sep, end=cls._end
         )
         code = cls_kwargs["begin"][-1]
-        return (code, *cls_args), dict()
+        return cls_args, dict(code=code)
 
     @classmethod
     def from_read(cls, serial: Serial):
         return super().from_read(serial, cls._expected)
 
 
+class StoppingEvent(EventMessage):
+    _code = EVT_CHANNEL_STOP
+
+
+class UpdateEvent(EventMessage):
+    _code = EVT_CHANNEL_UPDATE
+
+
 class RequestMessage:
+    _RTYPES = (StatusResponse, DataResponse)
+
     def __init__(
         self,
         addr: int | uint = 0,
         end=CRLF,
         response: None | StatusResponse | DataResponse = None,
+        rtype: None | type[StatusResponse] | type[DataResponse] = None,
     ) -> None:
         assert 0 <= addr <= 8, f"Address must be in range 0–8; got {addr}"
-        self.addr = uint(addr)
-        self.end = end
-        self.response = response
+        self._addr = uint(addr)
+        self._end = end
+        self._response = response
+        self._rtype = rtype
         pass
 
+    @property
+    def addr(self):
+        return self._addr
+
+    @property
+    def end(self):
+        return self._end
+
+    @property
+    def response(self):
+        return self._response
+
+    @property
+    def rtype(self):
+        return parse_none(self._rtype, type(self._response))
+
+    @property
+    def rcls(self):
+        return self.rtype
+
+    @response.setter
+    def response(self, value):
+        if isinstance(value, self._RTYPES):
+            value = value
+        elif self.rtype is type(None):
+            value = None
+        elif isinstance(value, str) and issubclass(self.rcls, self._RTYPES):
+            value = self.rcls.from_str(value)
+        elif isinstance(value, Serial) and issubclass(self.rcls, self._RTYPES):
+            value = self.rcls.from_read(value)
+        else:
+            raise ValueError(
+                "response must be str, StatusResponse or DataResponse"
+            )
+
+        self._response = value
+        return self.response
+
     def write_to(self, serial: Serial):
-        return serial.write(str(self).encode())
+        bytes_message = str(self).encode()
+        bytes_written = serial.write(bytes_message)
+        if bytes_written != len(bytes_message):
+            raise RuntimeError("Command was not fully written")
+
+        serial.flush()  # wait to finish transmission
+        self.response = serial
+        return self.response
 
     def __call__(self, serial: Serial):
         return self.write_to(serial)
@@ -1002,12 +1062,16 @@ class RequestMessage:
         return f"RequestMessage({int(self.addr)}, end={self.end!r})"
 
 
-class PumpAddressCommand(RequestMessage):
-    def __init__(
-        self, addr: int | uint = 1, response: None | StatusResponse = None
-    ) -> None:
+class SetPumpAddress(RequestMessage):
+    _end = CR
+    _rtype = StatusResponse
+
+    def __init__(self, addr: int | uint = 1) -> None:
         assert 1 <= addr <= 8, f"Pump address must be in range 1–8; got {addr}"
-        return super().__init__(addr, end=CR, response=response)
+        cls = type(self)
+        return super().__init__(
+            addr, end=cls._end, response=None, rtype=cls._rtype
+        )
 
     def __str__(self) -> str:
         return f"{AT}{self.addr}{self.end}"
@@ -1017,10 +1081,33 @@ class PumpAddressCommand(RequestMessage):
 
 
 class DeviceCommand(RequestMessage):
-    def __init__(self, addr, code, *args) -> None:
-        self.code = code
-        self.args = args
-        return super().__init__(addr, end=CRLF)
+    _code = GET_MODEL_INFO
+    _end = CRLF
+    _rtype = DataResponse
+    BASE_CLASSES = {
+        "DeviceCommand",
+        "ShortDeviceCommand",
+        "GetterCommand",
+        "ShortGetterCommand",
+        "SetterCommand",
+        "ShortSetterCommand",
+        "VerboseSetterCommand",
+    }
+
+    def __init__(self, addr, *args, code=None, rtype=None) -> None:
+        cls = type(self)
+        self._args = args
+        self._code = parse_none(code, cls._code)
+        rtype = parse_none(rtype, cls._rtype)
+        return super().__init__(addr, end=cls._end, response=None, rtype=rtype)
+
+    @property
+    def code(self):
+        return self._code
+
+    @property
+    def args(self):
+        return self._args
 
     def __str__(self) -> str:
         params = VB.join(str(a) for a in self.args)
@@ -1028,9 +1115,455 @@ class DeviceCommand(RequestMessage):
         return f"{self.addr}{self.code}{params}{self.end}"
 
     def __repr__(self) -> str:
-        args = [str(int(self.addr)), repr(self.code)]
+        cls = type(self)
+        name = cls.__name__
+        addr = str(int(self.addr))
+        code = repr(self.code)
+        args = [addr, code] if name in cls.BASE_CLASSES else [addr]
         optargs = [repr(a) for a in self.args]
-        return f"DeviceCommand({", ".join(args + optargs)})"
+        return f"{name}({", ".join(args + optargs)})"
+
+
+class ShortDeviceCommand(DeviceCommand):
+    def __init__(self, addr=0, code=None, rtype=None) -> None:
+        super().__init__(addr, code=code, rtype=rtype)
+
+
+# GETTERS AND SETTERS
+class GetterCommand(DeviceCommand):
+    """A command that gets device information, returning a DataResponse"""
+
+    _rtype = DataResponse
+
+
+class ShortGetterCommand(ShortDeviceCommand):
+    """A getter with no arguments, returning a DataResponse"""
+
+    _rtype = DataResponse
+
+
+class StatusGetterCommand(ShortDeviceCommand):
+    """A getter with no arguments, returning a StatusResponse"""
+
+    _rtype = StatusResponse
+
+
+class SetterCommand(DeviceCommand):
+    """A command that alters device settings, returning a StatusResponse"""
+
+    _rtype = StatusResponse
+
+
+class ShortSetterCommand(ShortDeviceCommand):
+    """A setter with no arguments, returning a StatusResponse"""
+
+    _rtype = StatusResponse
+
+
+class VerboseSetterCommand(DeviceCommand):
+    """A setter with arguments, returning a DataResponse"""
+
+    _rtype = DataResponse
+
+
+# 1.0 COMMUNICATIONS MANAGEMENT
+class GetChannelAddressing(ShortGetterCommand):
+    _code = GET_CHN_ADR
+
+
+class SetChannelAddressing(SetterCommand):
+    _code = SET_CHN_ADR
+
+
+class GetEventMessaging(ShortGetterCommand):
+    _code = GET_EVT_MSG
+
+
+class SetEventMessaging(SetterCommand):
+    _code = GET_EVT_MSG
+
+
+class GetSerialVersion(ShortGetterCommand):
+    _code = GET_SERIAL_VER
+
+
+# 2.0 PUMP DRIVE
+class StartPump(ShortSetterCommand):
+    _code = SET_START
+
+
+class StopPump(ShortSetterCommand):
+    _code = SET_STOP
+
+
+class PausePump(ShortSetterCommand):
+    _code = SET_PAUSE
+
+
+class GetDirection(ShortGetterCommand):
+    _code = GET_DIR
+
+
+class SetClockwise(ShortSetterCommand):
+    _code = SET_CW
+
+
+class SetCounterClockwise(ShortSetterCommand):
+    _code = SET_CCW
+
+
+class GetPumpError(ShortGetterCommand):
+    _code = GET_DRIVE_ERR
+
+
+# 3.0 OPERATIONAL MODES AND SETTINGS
+class GetMode(ShortGetterCommand):
+    _code = GET_MODE
+
+
+class SetModeRPM(ShortSetterCommand):
+    _code = SET_MODE_RPM
+
+
+class SetModeFlowrate(ShortSetterCommand):
+    _code = SET_MODE_FLOWRATE
+
+
+class SetModeVolumeRateFixed(ShortSetterCommand):
+    _code = SET_MODE_VOL_RATE
+
+
+class SetModeVolumeTimeFixed(ShortSetterCommand):
+    _code = SET_MODE_VOL_TIME
+
+
+class SetModeVolumeRateCycled(ShortSetterCommand):
+    _code = SET_MODE_VOL_PAUSE
+
+
+class SetModeTimeRateFixed(ShortSetterCommand):
+    _code = SET_MODE_TIME
+
+
+class SetModeTimeRateCycled(ShortSetterCommand):
+    _code = SET_MODE_RPM
+
+
+class GetRateOther(GetterCommand):
+    _code = GET_RATE_OTHER
+
+
+class SetRateOther(SetterCommand):
+    _code = SET_RATE_OTHER
+
+
+class GetRPM(ShortGetterCommand):
+    _code = GET_RPM
+
+
+class SetRPM(SetterCommand):
+    _code = SET_RPM
+
+
+class GetFlowrate(ShortGetterCommand):
+    _code = GET_FLOWRATE
+
+
+class SetFlowrate(VerboseSetterCommand):
+    _code = SET_FLOWRATE
+
+
+class GetVolumeFixed(ShortGetterCommand):
+    _code = GET_VOL
+
+
+class SetVolumeFixed(VerboseSetterCommand):
+    _code = SET_VOL
+
+
+class GetTimeFixed(ShortGetterCommand):
+    _code = GET_RUN_TIME
+
+
+class SetTimeFixed(SetterCommand):
+    _code = SET_RUN_TIME
+
+
+class GetPauseTime(ShortGetterCommand):
+    _code = GET_PAUSE_TIME
+
+
+class SetPauseTime(SetterCommand):
+    _code = SET_PAUSE_TIME
+
+
+class GetCycleCount(ShortGetterCommand):
+    _code = GET_CYCLE_COUNT
+
+
+class SetCycleCount(SetterCommand):
+    _code = SET_CYCLE_COUNT
+
+
+class GetMaxFlowrate(ShortGetterCommand):
+    _code = GET_MAX_FLOWRATE
+
+
+class GetMaxFlowrateCalibrated(ShortGetterCommand):
+    _code = GET_MAX_FLOWRATE_CALIBRATED
+
+
+class GetDispenseTimeByFlowrate(GetterCommand):
+    _code = GET_DISPENSE_TIME_FLOWRATE
+
+
+class GetDispenseTimeByRPM(GetterCommand):
+    _code = GET_DISPENSE_TIME_RPM
+
+
+# 4.0 CONFIGURATION
+class GetTubeDiameter(ShortGetterCommand):
+    _code = GET_DIAMETER
+
+
+class SetTubeDiameter(SetterCommand):
+    _code = SET_DIAMETER
+
+
+class GetBacksteps(ShortGetterCommand):
+    _code = GET_BACKSTEP
+
+
+class SetBacksteps(SetterCommand):
+    _code = SET_BACKSTEP
+
+
+class ResetConfigData(ShortSetterCommand):
+    _code = RESET_CONFIG_DATA
+
+
+# 5.0 CALIBRATION
+class GetCalDirection(ShortGetterCommand):
+    _code = GET_CAL_DIR
+
+
+class SetCalDirection(SetterCommand):
+    _code = SET_CAL_DIR
+
+
+class GetCalTargetVolume(ShortGetterCommand):
+    _code = GET_TARGET_VOL
+
+
+class SetCalTargetVolume(VerboseSetterCommand):
+    _code = SET_TARGET_VOL
+
+
+class SetCalActualVolume(VerboseSetterCommand):
+    _code = SET_ACTUAL_VOL
+
+
+class GetCalTime(ShortGetterCommand):
+    _code = GET_CAL_TIME
+
+
+class SetCalTime(SetterCommand):
+    _code = SET_CAL_TIME
+
+
+class GetRuntimeSinceCal(ShortGetterCommand):
+    _code = GET_RUNTIME_SINCE
+
+
+class StartCalibration(ShortSetterCommand):
+    _code = SET_CAL_START
+
+
+class CancelCalibration(ShortSetterCommand):
+    _code = SET_CAL_CANCEL
+
+
+# 6.0 SYSTEM
+class GetFirmwareVersion(ShortGetterCommand):
+    _code = GET_FIRMWARE
+
+
+class SetFactoryRollerVolume(SetterCommand):
+    # NOTE: distinguish from SetRollerVolume?
+    _code = SET_FACTORY_ROLLVOL
+
+
+class SaveSetRollerVolume(ShortSetterCommand):
+    # NOTE: distinguish from SetRollerVolume?
+    _code = SAVE_SET_ROLLVOL
+
+
+class ResetRollerVolume(ShortSetterCommand):
+    _code = RESET_ROLLVOL
+
+
+class SetPumpDisplayName(SetterCommand):
+    _code = SET_PUMP_NAME
+
+
+class GetPumpSerialNo(ShortGetterCommand):
+    _code = GET_SERIALNO
+
+
+class SetPumpSerialNo(SetterCommand):
+    _code = SET_SERIALNO
+
+
+class GetPumpLanguage(ShortGetterCommand):
+    _code = GET_LANG
+
+
+class SetPumpLanguage(SetterCommand):
+    _code = SET_LANG
+
+
+class GetNumberOfChannels(ShortGetterCommand):
+    _code = GET_CHANNELNO
+
+
+class SetNumberOfChannels(SetterCommand):
+    _code = SET_CHANNELNO
+
+
+class GetNumberOfRollers(ShortGetterCommand):
+    _code = GET_ROLLERNO
+
+
+class SetNumberOfRollers(SetterCommand):
+    _code = SET_ROLLERNO
+
+
+class GetRevsSinceReset(ShortGetterCommand):
+    _code = GET_REV_SINCE_RESET
+
+
+class GetVolumeSinceReset(ShortGetterCommand):
+    # NOTE: distinguish from GetTotalVolumeSinceReset?
+    _code = GET_VOL_SINCE_RESET
+
+
+class GetTimePumpedSinceReset(ShortGetterCommand):
+    _code = GET_TIME_SINCE_RESET
+
+
+class EnableGUI(ShortSetterCommand):
+    _code = SET_GUI_ON
+
+
+class DiableGIU(ShortSetterCommand):
+    _code = SET_GUI_OFF
+
+
+class SetDisplayNumbers(SetterCommand):
+    _code = SET_DISPLAY_NUM
+
+
+class SetDisplayCharacters(SetterCommand):
+    _code = SET_DISPLAY_CHR
+
+
+class GetRunStatus(StatusGetterCommand):
+    _code = GET_RUN_STATUS
+
+
+class GetModelInfo(ShortGetterCommand):
+    _code = GET_MODEL_INFO
+
+
+class GetPumpHeadModel(ShortGetterCommand):
+    _code = GET_HEAD_CODE
+
+
+class SetPumpHeadModel(SetterCommand):
+    _code = SET_HEAD_CODE
+
+
+class GetPumpTime10ths(ShortGetterCommand):
+    # NOTE: distinguish from GetTimeFixed?
+    _code = GET_TIME_10THS
+
+
+class SetPumpTime10ths(SetterCommand):
+    # NOTE: distinguish from SetTimeFixed?
+    _code = SET_TIME_10THS
+
+
+class SetDispenseTimeMins(SetterCommand):
+    # NOTE: distinguish from SetTimeFixed?
+    _code = SET_TIME_MINS
+
+
+class SetDispenseTimeHrs(SetterCommand):
+    # NOTE: distinguish from SetTimeFixed?
+    _code = SET_TIME_HRS
+
+
+class GetLowOrderSteps(ShortGetterCommand):
+    _code = GET_ROLLSTEP_LO
+
+
+class SetLowOrderSteps(SetterCommand):
+    _code = GET_ROLLSTEP_LO
+
+
+class GetHighOrderSteps(ShortGetterCommand):
+    _code = GET_ROLLSTEP_HI
+
+
+class SetHighOrderSteps(SetterCommand):
+    _code = SET_ROLLSTEP_HI
+
+
+class GetRollerVolume(ShortGetterCommand):
+    _code = GET_ROLLVOL_CAL
+
+
+class SetRollerVolume(SetterCommand):
+    # NOTE: distinguish from SetFactoryRollerVolume
+    _code = SET_ROLLVOL_CAL
+
+
+class ResetCalibrationData(ShortSetterCommand):
+    # NOTE: distinguish from ResetConfigData
+    _code = RESET_CAL
+
+
+class GetPauseTime10ths(ShortGetterCommand):
+    # NOTE: distinguish from GetPauseTime?
+    _code = GET_PAUSE_10THS
+
+
+class SetPauseTime10ths(SetterCommand):
+    # NOTE: distinguish from SetPauseTime?
+    _code = SET_PAUSE_10THS
+
+
+class SetPauseTimeMins(SetterCommand):
+    # NOTE: distinguish from SetPauseTime?
+    _code = SET_PAUSE_MINS
+
+
+class SetPauseTimeHrs(SetterCommand):
+    # NOTE: distinguish from SetPauseTime?
+    _code = SET_PAUSE_HRS
+
+
+class GetTotalVolumeSinceReset(GetterCommand):
+    # NOTE: distinguish from GetVolumeSinceReset?
+    _code = GET_VOLALL_SINCE_RESET
+
+
+class SavePumpSettings(ShortSetterCommand):
+    _code = SAVE_SET_ALL
+
+
+class GetFootSwitchStatus(StatusGetterCommand):
+    _code = GET_FOOTSWITCH_STATUS
 
 
 class RegloICCChannel:
