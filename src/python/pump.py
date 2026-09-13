@@ -37,6 +37,7 @@ References
 """
 
 import time
+from datetime import datetime
 
 from numpy import clip, format_float_scientific, sign, uint
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
@@ -385,7 +386,7 @@ class RegloDataType:
 class BooleanType(RegloDataType):
     """A single character indicating True or False."""
 
-    def __init__(self, value=False) -> None:
+    def __init__(self, value: bool | int = False) -> None:
         super().__init__(bool(value), width=uint(1))
 
     def __str__(self) -> str:
@@ -394,6 +395,10 @@ class BooleanType(RegloDataType):
 
     def __repr__(self) -> str:
         return f"BooleanType({self._value})"
+
+    @classmethod
+    def from_str(cls, s):
+        return cls(int(s))
 
 
 class DirectionType(RegloDataType):
@@ -409,6 +414,10 @@ class DirectionType(RegloDataType):
     def __repr__(self) -> str:
         key = {CCW: "CCW", CW: "CW"}
         return f"DirectionType({key[self._value]})"
+
+    @classmethod
+    def from_str(cls, s):
+        return cls(s)
 
 
 class DiscreteType(RegloDataType):
@@ -445,6 +454,10 @@ class DiscreteType(RegloDataType):
         isbase = name == DiscreteType.__name__
         args = f", width={self._width}, vmax={self._vmax}" if isbase else ""
         return f"{name}({self._value}{args})"
+
+    @classmethod
+    def from_str(cls, s, *args, **kwargs):
+        return cls(uint(s), *args, **kwargs)
 
 
 class DiscreteType1(DiscreteType):
@@ -539,7 +552,7 @@ class FractionalType(RegloDataType):
     - Width: Variable
     """
 
-    def __init__(self, value=0) -> None:
+    def __init__(self, value: float | int = 0) -> None:
         value = round(float(value), 2)
         len_str = len(self.val2str(value))
         super().__init__(value, width=len_str)
@@ -553,8 +566,12 @@ class FractionalType(RegloDataType):
     def __repr__(self) -> str:
         return f"FractionalType{self._value}"
 
+    @classmethod
+    def from_str(cls, s):
+        return cls(float(s))
 
-class VolumeType(RegloDataType):
+
+class VolumeType1(RegloDataType):
     """`mmmmEse` — represents the scientific notation of `m.mmm × 10se`.
 
     - Width: 7
@@ -569,19 +586,53 @@ class VolumeType(RegloDataType):
     - `e`: Single digit exponent
     """
 
+    _width = 7
+
     def __init__(self, value=float()) -> None:
         value = 0 if value == 0 else clip(value, VOLTYPE_MIN, VOLTYPE_MAX)
-        super().__init__(value, width=7)
+        super().__init__(value, width=type(self)._width)
 
     def float2sci(self, x):
         s = format_float_scientific(x, precision=3, min_digits=3, exp_digits=1)
         return s.upper()
 
     def __str__(self) -> str:
-        return self.float2sci(self._value).replace(".", "").upper()
+        return self.float2sci(self._value).replace(".", "")
 
     def __repr__(self) -> str:
-        return f"VolumeType({self.float2sci(self._value)})"
+        return f"{type(self).__name__}({self.float2sci(self._value)})"
+
+    @classmethod
+    def from_str(cls, s):
+        m, mmmEse = s[0], s[1:]
+        s = f"{m}.{mmmEse}"
+        return cls(float(s))
+
+
+class VolumeType2(VolumeType1):
+    """`mmmmse` — represents the scientific notation of `m.mmm × 10se`.
+
+    - Width: 6
+    - Units: mL
+
+    For example, `1.200 × 10-2` is represented with `1200-2`.
+    Note that the decimal point is inferred after the first character.
+
+    - `mmmm`: 4 character mantissa
+    - `s`: Sign for exponent (`+` or `-`)
+    - `e`: Single digit exponent
+    """
+
+    _width = 6
+
+    def __str__(self) -> str:
+        return super().__str__().replace("E", "")
+
+    @classmethod
+    def from_str(cls, s):
+        m, mmm, se = s[0], s[1:4], s[-2:]
+        s = f"{m}.{mmm}E{se}"
+        return cls(float(s))
 
 
 class TimeType(DiscreteType):
@@ -690,6 +741,10 @@ class StringType(RegloDataType):
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._value!r})"
 
+    @classmethod
+    def from_str(cls, s):
+        return cls(s)
+
 
 class CharType(StringType):
     def __init__(self, value) -> None:
@@ -744,10 +799,10 @@ class AddressType(DiscreteType):
         return f"AddressType({self._value})"
 
 
-class DiamaterType(RegloDataType):
+class DiameterType(RegloDataType):
     def __init__(self, value: float, unit="mm") -> None:
         value = round(clip(value, 0.0, None), 2)
-        self.unit = unit
+        self.unit = unit.strip()
         super().__init__(value, width=7)
 
     def __str__(self) -> str:
@@ -756,23 +811,53 @@ class DiamaterType(RegloDataType):
     def __repr__(self) -> str:
         return f"DiameterType({self._value:.2f}, unit={self.unit!r})"
 
+    @classmethod
+    def from_str(cls, s: str):
+        value, unit = s.split(SP, 1)
+        return cls(float(value), unit=unit.strip())
 
-class DeviceMessage:
-    def __init__(self) -> None:
+
+class RegloMessage:
+    """Abstract base class for all messages sent or received"""
+
+    _datetime = None
+
+    def __init__(self, *, datetime=_datetime) -> None:
+        self.datetime = datetime
         pass
 
     def __repr__(self) -> str:
-        return "DeviceMessage()"
+        return f"{type(self).__name__}()"
+
+    @classmethod
+    def now(cls):
+        return datetime.now().astimezone()
+
+    @property
+    def datetime(self):
+        return self._datetime
+
+    @datetime.setter
+    def datetime(self, value):
+        self._datetime = value
+
+    def log_datetime(self):
+        self.datetime = self.now()
+        return self.datetime
+
+
+class DeviceMessage(RegloMessage):
+    """Abstract base class for messages received from the device"""
 
 
 class StatusResponse(DeviceMessage):
     BYTES = 1
 
-    def __init__(self, status: str, desc="") -> None:
+    def __init__(self, status: str, *, desc="", **kwargs) -> None:
         assert len(status) == 1, "StatusResponse must be a single character."
         self.status = status
         self.desc = desc
-        pass
+        return super().__init__(**kwargs)
 
     def __repr__(self) -> str:
         name = type(self).__name__
@@ -783,58 +868,58 @@ class StatusResponse(DeviceMessage):
         return self.status
 
     @classmethod
-    def from_str(cls, s: str):
+    def from_str(cls, s: str, **kwargs):
         assert s.isascii(), "Encountered non-ASCII response."
         assert len(s) == 1, "Encountered multi-character response."
         match s:
             case r if r == SUCCESSFULL:
-                return StatusSuccessfull()
+                return StatusSuccessfull(**kwargs)
             case r if r == UNSUCCESSFULL:
-                return StatusUnsuccessfull()
+                return StatusUnsuccessfull(**kwargs)
             case r if r == NEGATIVE:
-                return StatusNegative()
+                return StatusNegative(**kwargs)
             case r if r == POSITIVE:
-                return StatusPositive()
+                return StatusPositive(**kwargs)
             case _:
-                return StatusUnknown(s)
+                return StatusUnknown(s, **kwargs)
 
     @classmethod
-    def from_read(cls, serial: Serial):
+    def read(cls, serial: Serial):
         s = serial.read(cls.BYTES).decode()
-        return cls.from_str(s)
+        return cls.from_str(s, datetime=cls.now())
 
 
 class StatusUnknown(StatusResponse):
-    def __init__(self, status: str) -> None:
-        super().__init__(status, desc="Unknown status.")
+    def __init__(self, status: str, **kwargs) -> None:
+        super().__init__(status, desc="Unknown status.", **kwargs)
 
 
 class StatusSuccessfull(StatusResponse):
-    def __init__(self) -> None:
+    def __init__(self, **kwargs) -> None:
         stat = SUCCESSFULL
         desc = STATUS_DESC_KEY[stat]
-        return super().__init__(stat, desc)
+        return super().__init__(stat, desc=desc, **kwargs)
 
 
 class StatusUnsuccessfull(StatusResponse):
-    def __init__(self) -> None:
+    def __init__(self, **kwargs) -> None:
         stat = UNSUCCESSFULL
         desc = STATUS_DESC_KEY[stat]
-        return super().__init__(stat, desc)
+        return super().__init__(stat, desc=desc, **kwargs)
 
 
 class StatusNegative(StatusResponse):
-    def __init__(self, desc=None) -> None:
+    def __init__(self, desc=None, **kwargs) -> None:
         stat = NEGATIVE
         desc = parse_none(desc, STATUS_DESC_KEY[stat])
-        return super().__init__(stat, desc)
+        return super().__init__(stat, desc=desc, **kwargs)
 
 
 class StatusPositive(StatusResponse):
-    def __init__(self, desc=None) -> None:
+    def __init__(self, desc=None, **kwargs) -> None:
         stat = POSITIVE
         desc = parse_none(desc, STATUS_DESC_KEY[stat])
-        return super().__init__(stat, desc)
+        return super().__init__(stat, desc=desc, **kwargs)
 
 
 class DataMessage(DeviceMessage):
@@ -842,17 +927,24 @@ class DataMessage(DeviceMessage):
     _BEGIN = ""
     _SEP = SP
     _END = CRLF
+    _types = None
 
-    def __init__(self, *args, begin=_BEGIN, sep=_SEP, end=_END) -> None:
+    def __init__(
+        self, *args, begin=_BEGIN, sep=_SEP, end=_END, **kwargs
+    ) -> None:
         self._args = args
         self._begin = begin
         self._sep = sep
         self._end = end
-        pass
+        return super().__init__(**kwargs)
 
     @property
     def args(self):
         return self._args
+
+    @property
+    def types(self):
+        return parse_none(self._types, tuple(type(a) for a in self._args))
 
     @property
     def begin(self):
@@ -879,14 +971,22 @@ class DataMessage(DeviceMessage):
         return f"DataMessage({", ".join(optargs + [kws])})"
 
     @classmethod  # NOTE: specialise for subclass call signature
-    def parse(cls, s, begin: int | str, sep: str, end: int | str):
+    def parse(cls, s, begin: int | str, sep: str, end: int | str, **kwargs):
         """Parse message string and return `cls_args`, `cls_kwargs`"""
         begin = s[:begin] if isinstance(begin, int) else begin
         end = s[-end:] if isinstance(end, int) else end
         str_data = s.rstrip(end).lstrip(begin)
-        cls_kwargs = dict(begin=begin, sep=sep, end=end)
+        cls_kwargs = dict(begin=begin, sep=sep, end=end, **kwargs)
         cls_args = str_data.split(sep)
-        return cls_args, cls_kwargs
+        return cls.convert_args(cls_args), cls_kwargs
+
+    @classmethod  # automatically convert if types provided by subclass
+    def convert_args(cls, *args):
+        types = cls._types
+        if isinstance(types, (tuple, list)) and len(args) == len(types):
+            return tuple(t(arg) for (t, arg) in zip(types, args))
+        else:
+            return args
 
     @classmethod  # NOTE: no need to specialise
     def from_str(cls, s: str, *args, **kwargs):
@@ -895,12 +995,12 @@ class DataMessage(DeviceMessage):
         return cls(*cls_args, **cls_kwargs)
 
     @classmethod
-    def from_read(cls, serial: Serial, expected=None, *args, **kwargs):
+    def read(cls, serial: Serial, expected=None, *args, **kwargs):
         """Read serial message and convert to a DataMessage type"""
         END = kwargs["end"] if "end" in kwargs else cls._END
         expected = parse_none(expected, END)
         s = serial.read_until(expected.encode("ascii")).decode()
-        return cls.from_str(s, *args, **kwargs)
+        return cls.from_str(s, *args, datetime=cls.now(), **kwargs)
 
 
 class DataResponse(DataMessage):
@@ -920,22 +1020,192 @@ class DataResponse(DataMessage):
     _sep = SP
     _end = CRLF
 
-    def __init__(self, *args) -> None:
-        kwargs = dict(begin=self.begin, sep=self.sep, end=self.end)
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs = dict(begin=self.begin, sep=self.sep, end=self.end, **kwargs)
         return super().__init__(*args, **kwargs)
 
     def __repr__(self) -> str:
         optargs = [repr(a) for a in self.args]
         return f"{type(self).__name__}({", ".join(optargs)})"
 
-    @classmethod
-    def parse(cls, s):
+    @classmethod  # NOTE: parent method can convert args
+    def parse(cls, s, **kwargs):
         cls_args, _ = super().parse(s, cls._begin, cls._sep, cls._end)
-        return cls_args, dict()
+        return cls_args, dict(**kwargs)
 
     @classmethod
-    def from_read(cls, serial: Serial):
-        return super().from_read(serial, cls._end)
+    def read(cls, serial: Serial, **kwargs):
+        return super().read(serial, cls._end, **kwargs)
+
+
+# 1.0 COMMUNICATIONS MANAGEMENT
+class ChannelAddressingResponse(DataResponse):
+    _types = (BooleanType,)
+
+
+class EventMessagingResponse(DataResponse):
+    _types = (BooleanType,)
+
+
+class SerialVersionResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+# 2.0 PUMP DRIVE
+class DirectionResponse(DataResponse):
+    _types = (DirectionType,)
+
+
+class PumpErrorResponse(DataResponse):
+    _types = (CharType, CharType)  # NOTE: CHECK FORMAT MANUALLY
+
+
+# 3.0 OPERATIONAL MODES AND SETTINGS
+class ModeResponse(DataResponse):
+    _types = (CharType,)
+
+
+class RateOtherResponse(DataResponse):
+    _types = (BooleanType,)
+
+
+class RPMResponse(DataResponse):
+    _types = (FractionalType,)
+
+
+class FlowrateResponse(DataResponse):
+    _types = (VolumeType1,)
+
+
+class VolumeFixedResponse(DataResponse):
+    _types = (VolumeType1,)
+
+
+class TimeFixedResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+class PauseTimeResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+class CycleCountResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+# class MaxFlowrateResponse(DataResponse):
+#     _types = ()  # NOTE: CHECK FORMAT MANUALLY
+
+
+# class MaxFlowrateCalibratedResponse(DataResponse):
+#     _types = ()  # NOTE: CHECK FORMAT MANUALLY
+
+
+class DispenseTimeByFlowrateResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+class DispenseTimeByRPMResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+# 4.0 CONFIGURATION
+class TubeDiameterResponse(DataResponse):
+    _types = (DiameterType,)
+
+
+class BackstepsResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+# 5.0 CALIBRATION
+class CalDirectionResponse(DataResponse):
+    _types = (DirectionType,)
+
+
+class CalTargetVolumeResponse(DataResponse):
+    _types = (VolumeType1,)
+
+
+class CalActualVolumeResponse(DataResponse):
+    _types = (VolumeType1,)
+
+
+class CalTimeResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+class RuntimeSinceCalResponse(DataResponse):
+    _types = (TimeType2,)
+
+
+# 6.0 SYSTEM
+class FirmwareVersionResponse(DataResponse):
+    _types = (DiscreteType2,)
+
+
+class PumpSerialNoResponse(DataResponse):
+    _types = (StringType,)
+
+
+class PumpLanguageResponse(DataResponse):
+    _types = (LanguageType,)
+
+
+class NumberOfChannelsResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+class NumberOfRollersResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+class RevsSinceResetResponse(DataResponse):
+    _types = (DiscreteType4,)
+
+
+class VolumeSinceResetResponse(DataResponse):
+    # NOTE: distinguish from GetTotalVolumeSinceReset?
+    _types = (DiscreteType4,)
+
+
+class TimePumpedSinceResetResponse(DataResponse):
+    _types = (DiscreteType4,)
+
+
+class ModelInfoResponse(DataResponse):
+    _types = (StringType, DiscreteType1, DiscreteType1)
+
+
+class PumpHeadModelResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+class PumpTime10thsResponse(DataResponse):
+    # NOTE: distinguish from GetTimeFixed?
+    _types = (DiscreteType1,)
+
+
+class LowOrderStepsResponse(DataResponse):
+    _types = (DiscreteType3,)
+
+
+class HighOrderStepsResponse(DataResponse):
+    _types = (DiscreteType3,)
+
+
+class RollerVolumeResponse(DataResponse):
+    _types = (VolumeType1,)  # NOTE: in nl units?
+
+
+class PauseTime10thsResponse(DataResponse):
+    # NOTE: distinguish from GetPauseTime?
+    _types = (DiscreteType1,)
+
+
+# class TotalVolumeSinceResetResponse(DataResponse):
+#     # NOTE: distinguish from GetVolumeSinceReset?
+#     _types = ()  # NOTE: CHECK FORMAT MANUALLY
 
 
 class EventMessage(DataMessage):
@@ -967,7 +1237,7 @@ class EventMessage(DataMessage):
         return f"EventMessage({", ".join(optargs + kws)})"
 
     @classmethod
-    def parse(cls, s):
+    def parse(cls, s):  # NOTE: parent method can convert args
         cls_args, cls_kwargs = super().parse(
             s, begin=cls._begin, sep=cls._sep, end=cls._end
         )
@@ -975,8 +1245,8 @@ class EventMessage(DataMessage):
         return cls_args, dict(code=code)
 
     @classmethod
-    def from_read(cls, serial: Serial):
-        return super().from_read(serial, cls._expected)
+    def read(cls, serial: Serial):
+        return super().read(serial, cls._expected)
 
 
 class StoppingEvent(EventMessage):
@@ -987,7 +1257,7 @@ class UpdateEvent(EventMessage):
     _code = EVT_CHANNEL_UPDATE
 
 
-class RequestMessage:
+class RequestMessage(RegloMessage):
     _RTYPES = (StatusResponse, DataResponse)
 
     def __init__(
@@ -1004,6 +1274,18 @@ class RequestMessage:
         self._rtype = rtype
         pass
 
+    def __call__(self, serial: Serial):
+        return self.write(serial)
+
+    def __len__(self):
+        return len(str(self))
+
+    def __repr__(self) -> str:
+        return f"RequestMessage({int(self.addr)}, end={self.end!r})"
+
+    def __str__(self):
+        return self.end
+
     @property
     def addr(self):
         return self._addr
@@ -1016,14 +1298,6 @@ class RequestMessage:
     def response(self):
         return self._response
 
-    @property
-    def rtype(self):
-        return parse_none(self._rtype, type(self._response))
-
-    @property
-    def rcls(self):
-        return self.rtype
-
     @response.setter
     def response(self, value):
         if isinstance(value, self._RTYPES):
@@ -1033,7 +1307,7 @@ class RequestMessage:
         elif isinstance(value, str) and issubclass(self.rcls, self._RTYPES):
             value = self.rcls.from_str(value)
         elif isinstance(value, Serial) and issubclass(self.rcls, self._RTYPES):
-            value = self.rcls.from_read(value)
+            value = self.rcls.read(value)
         else:
             raise ValueError(
                 "response must be str, StatusResponse or DataResponse"
@@ -1042,24 +1316,30 @@ class RequestMessage:
         self._response = value
         return self.response
 
-    def write_to(self, serial: Serial):
-        bytes_message = str(self).encode()
-        bytes_written = serial.write(bytes_message)
-        if bytes_written != len(bytes_message):
-            raise RuntimeError("Command was not fully written")
+    @property
+    def rtype(self):
+        return parse_none(self._rtype, type(self._response))
 
+    @property
+    def rcls(self):
+        return self.rtype
+
+    @property
+    def encoded(self):
+        return self.encode()
+
+    def encode(self):
+        return str(self).encode()
+
+    def write(self, serial: Serial):
+        bytes_written = serial.write(self.encoded)
+        if bytes_written != len(self.encoded):
+            raise RuntimeError("Command was not fully written")
+        self.log_datetime()
         serial.flush()  # wait to finish transmission
+
         self.response = serial
         return self.response
-
-    def __call__(self, serial: Serial):
-        return self.write_to(serial)
-
-    def __str__(self) -> str:
-        return self.end
-
-    def __repr__(self) -> str:
-        return f"RequestMessage({int(self.addr)}, end={self.end!r})"
 
 
 class SetPumpAddress(RequestMessage):
@@ -1073,11 +1353,11 @@ class SetPumpAddress(RequestMessage):
             addr, end=cls._end, response=None, rtype=cls._rtype
         )
 
-    def __str__(self) -> str:
-        return f"{AT}{self.addr}{self.end}"
-
     def __repr__(self) -> str:
         return f"PumpAddressCommand({int(self.addr)})"
+
+    def __str__(self) -> str:
+        return f"{AT}{self.addr}{self.end}"
 
 
 class DeviceCommand(RequestMessage):
@@ -1168,6 +1448,7 @@ class VerboseSetterCommand(DeviceCommand):
 
 # 1.0 COMMUNICATIONS MANAGEMENT
 class GetChannelAddressing(ShortGetterCommand):
+    _rtype = ChannelAddressingResponse
     _code = GET_CHN_ADR
 
 
@@ -1176,6 +1457,7 @@ class SetChannelAddressing(SetterCommand):
 
 
 class GetEventMessaging(ShortGetterCommand):
+    _rtype = EventMessagingResponse
     _code = GET_EVT_MSG
 
 
@@ -1184,6 +1466,7 @@ class SetEventMessaging(SetterCommand):
 
 
 class GetSerialVersion(ShortGetterCommand):
+    _rtype = SerialVersionResponse
     _code = GET_SERIAL_VER
 
 
@@ -1201,6 +1484,7 @@ class PausePump(ShortSetterCommand):
 
 
 class GetDirection(ShortGetterCommand):
+    _rtype = DirectionResponse
     _code = GET_DIR
 
 
@@ -1213,11 +1497,13 @@ class SetCounterClockwise(ShortSetterCommand):
 
 
 class GetPumpError(ShortGetterCommand):
+    _rtype = PumpErrorResponse
     _code = GET_DRIVE_ERR
 
 
 # 3.0 OPERATIONAL MODES AND SETTINGS
 class GetMode(ShortGetterCommand):
+    _rtype = ModeResponse
     _code = GET_MODE
 
 
@@ -1250,6 +1536,7 @@ class SetModeTimeRateCycled(ShortSetterCommand):
 
 
 class GetRateOther(GetterCommand):
+    _rtype = RateOtherResponse
     _code = GET_RATE_OTHER
 
 
@@ -1258,6 +1545,7 @@ class SetRateOther(SetterCommand):
 
 
 class GetRPM(ShortGetterCommand):
+    _rtype = RPMResponse
     _code = GET_RPM
 
 
@@ -1266,22 +1554,27 @@ class SetRPM(SetterCommand):
 
 
 class GetFlowrate(ShortGetterCommand):
+    _rtype = FlowrateResponse
     _code = GET_FLOWRATE
 
 
 class SetFlowrate(VerboseSetterCommand):
+    _rtype = FlowrateResponse
     _code = SET_FLOWRATE
 
 
 class GetVolumeFixed(ShortGetterCommand):
+    _code = VolumeFixedResponse
     _code = GET_VOL
 
 
 class SetVolumeFixed(VerboseSetterCommand):
+    _rtype = VolumeFixedResponse
     _code = SET_VOL
 
 
 class GetTimeFixed(ShortGetterCommand):
+    _rtype = TimeFixedResponse
     _code = GET_RUN_TIME
 
 
@@ -1290,6 +1583,7 @@ class SetTimeFixed(SetterCommand):
 
 
 class GetPauseTime(ShortGetterCommand):
+    _rtype = PauseTimeResponse
     _code = GET_PAUSE_TIME
 
 
@@ -1298,6 +1592,7 @@ class SetPauseTime(SetterCommand):
 
 
 class GetCycleCount(ShortGetterCommand):
+    _rtype = CycleCountResponse
     _code = GET_CYCLE_COUNT
 
 
@@ -1306,23 +1601,28 @@ class SetCycleCount(SetterCommand):
 
 
 class GetMaxFlowrate(ShortGetterCommand):
+    # _rtype = MaxFlowRateResponse
     _code = GET_MAX_FLOWRATE
 
 
 class GetMaxFlowrateCalibrated(ShortGetterCommand):
+    # _rtype = MaxFlowRateCalibratedResponse
     _code = GET_MAX_FLOWRATE_CALIBRATED
 
 
 class GetDispenseTimeByFlowrate(GetterCommand):
+    _rtype = DispenseTimeByFlowrateResponse
     _code = GET_DISPENSE_TIME_FLOWRATE
 
 
 class GetDispenseTimeByRPM(GetterCommand):
+    _rtype = DispenseTimeByRPMResponse
     _code = GET_DISPENSE_TIME_RPM
 
 
 # 4.0 CONFIGURATION
 class GetTubeDiameter(ShortGetterCommand):
+    _rtype = TubeDiameterResponse
     _code = GET_DIAMETER
 
 
@@ -1331,6 +1631,7 @@ class SetTubeDiameter(SetterCommand):
 
 
 class GetBacksteps(ShortGetterCommand):
+    _rtype = BackstepsResponse
     _code = GET_BACKSTEP
 
 
@@ -1344,6 +1645,7 @@ class ResetConfigData(ShortSetterCommand):
 
 # 5.0 CALIBRATION
 class GetCalDirection(ShortGetterCommand):
+    _rtype = CalDirectionResponse
     _code = GET_CAL_DIR
 
 
@@ -1352,18 +1654,22 @@ class SetCalDirection(SetterCommand):
 
 
 class GetCalTargetVolume(ShortGetterCommand):
+    _rtype = CalTargetVolumeResponse
     _code = GET_TARGET_VOL
 
 
 class SetCalTargetVolume(VerboseSetterCommand):
+    _rtype = CalTargetVolumeResponse
     _code = SET_TARGET_VOL
 
 
 class SetCalActualVolume(VerboseSetterCommand):
+    _rtype = CalActualVolumeResponse
     _code = SET_ACTUAL_VOL
 
 
 class GetCalTime(ShortGetterCommand):
+    _rtype = CalTimeResponse
     _code = GET_CAL_TIME
 
 
@@ -1372,6 +1678,7 @@ class SetCalTime(SetterCommand):
 
 
 class GetRuntimeSinceCal(ShortGetterCommand):
+    _rtype = RuntimeSinceCalResponse
     _code = GET_RUNTIME_SINCE
 
 
@@ -1385,6 +1692,7 @@ class CancelCalibration(ShortSetterCommand):
 
 # 6.0 SYSTEM
 class GetFirmwareVersion(ShortGetterCommand):
+    _rtype = FirmwareVersionResponse
     _code = GET_FIRMWARE
 
 
@@ -1407,6 +1715,7 @@ class SetPumpDisplayName(SetterCommand):
 
 
 class GetPumpSerialNo(ShortGetterCommand):
+    _rtype = PumpSerialNoResponse
     _code = GET_SERIALNO
 
 
@@ -1415,6 +1724,7 @@ class SetPumpSerialNo(SetterCommand):
 
 
 class GetPumpLanguage(ShortGetterCommand):
+    _rtype = PumpLanguageResponse
     _code = GET_LANG
 
 
@@ -1423,6 +1733,7 @@ class SetPumpLanguage(SetterCommand):
 
 
 class GetNumberOfChannels(ShortGetterCommand):
+    _rtype = NumberOfChannelsResponse
     _code = GET_CHANNELNO
 
 
@@ -1431,6 +1742,7 @@ class SetNumberOfChannels(SetterCommand):
 
 
 class GetNumberOfRollers(ShortGetterCommand):
+    _rtype = NumberOfRollersResponse
     _code = GET_ROLLERNO
 
 
@@ -1439,15 +1751,18 @@ class SetNumberOfRollers(SetterCommand):
 
 
 class GetRevsSinceReset(ShortGetterCommand):
+    _rtype = RevsSinceResetResponse
     _code = GET_REV_SINCE_RESET
 
 
 class GetVolumeSinceReset(ShortGetterCommand):
     # NOTE: distinguish from GetTotalVolumeSinceReset?
+    _rtype = VolumeSinceResetResponse
     _code = GET_VOL_SINCE_RESET
 
 
 class GetTimePumpedSinceReset(ShortGetterCommand):
+    _rtype = TimePumpedSinceResetResponse
     _code = GET_TIME_SINCE_RESET
 
 
@@ -1472,10 +1787,12 @@ class GetRunStatus(StatusGetterCommand):
 
 
 class GetModelInfo(ShortGetterCommand):
+    _rtype = ModelInfoResponse
     _code = GET_MODEL_INFO
 
 
 class GetPumpHeadModel(ShortGetterCommand):
+    _rtype = PumpHeadModelResponse
     _code = GET_HEAD_CODE
 
 
@@ -1485,6 +1802,7 @@ class SetPumpHeadModel(SetterCommand):
 
 class GetPumpTime10ths(ShortGetterCommand):
     # NOTE: distinguish from GetTimeFixed?
+    _rtype = PumpTime10thsResponse
     _code = GET_TIME_10THS
 
 
@@ -1504,6 +1822,7 @@ class SetDispenseTimeHrs(SetterCommand):
 
 
 class GetLowOrderSteps(ShortGetterCommand):
+    _rtype = LowOrderStepsResponse
     _code = GET_ROLLSTEP_LO
 
 
@@ -1512,6 +1831,7 @@ class SetLowOrderSteps(SetterCommand):
 
 
 class GetHighOrderSteps(ShortGetterCommand):
+    _rtype = HighOrderStepsResponse
     _code = GET_ROLLSTEP_HI
 
 
@@ -1520,6 +1840,7 @@ class SetHighOrderSteps(SetterCommand):
 
 
 class GetRollerVolume(ShortGetterCommand):
+    _rtype = RollerVolumeResponse
     _code = GET_ROLLVOL_CAL
 
 
@@ -1535,6 +1856,7 @@ class ResetCalibrationData(ShortSetterCommand):
 
 class GetPauseTime10ths(ShortGetterCommand):
     # NOTE: distinguish from GetPauseTime?
+    _rtype = PauseTime10thsResponse
     _code = GET_PAUSE_10THS
 
 
@@ -1555,6 +1877,7 @@ class SetPauseTimeHrs(SetterCommand):
 
 class GetTotalVolumeSinceReset(GetterCommand):
     # NOTE: distinguish from GetVolumeSinceReset?
+    # _rtype = TotalVolumeSinceResetResponse
     _code = GET_VOLALL_SINCE_RESET
 
 
