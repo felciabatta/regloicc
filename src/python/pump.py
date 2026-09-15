@@ -40,6 +40,8 @@ import time
 from datetime import datetime
 
 from numpy import clip, format_float_scientific, sign, uint
+from pandas import DataFrame
+from pandas import concat as pdcat
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
 
 from .utils import get_port, parse_none
@@ -334,9 +336,13 @@ EVT_ID = CARET
 EVT_CHANNEL_STOP = "X"
 EVT_CHANNEL_UPDATE = "U"
 STOPPED_DESC_KEY = {
-    STOPPED_PUMP_COMPLETE: "Pumping complete (expiration of timer or volume limit reached).",
+    STOPPED_PUMP_COMPLETE: (
+        "Pumping complete (expiration of timer or volume limit reached)."
+    ),
     STOPPED_CALI_COMPLETE: "Calibration pumping complete.",
-    STOPPED_MANUAL: "Manual (emergency) stop event (user presses stop button on the pump).",
+    STOPPED_MANUAL: (
+        "Manual (emergency) stop event (user presses stop button on the pump)."
+    ),
     STOPPED_OVERHEAT: "Over temperature condition.",
     STOPPED_OVERCURRENT: "Over current condition.",
 }
@@ -345,7 +351,9 @@ CSTATUS_DESC_KEY = {
     CSTATUS_PAUSED_BTWN_CYCLES: "Paused between cycles",
     CSTATUS_STOPPED: "Stopped",
     CSTATUS_CALI_PUMPING: "Calibration pumping",
-    CSTATUS_CALI_PENDING: "Calibration pending (waiting for measured value to be entered)",
+    CSTATUS_CALI_PENDING: (
+        "Calibration pending (waiting for measured value to be entered)"
+    ),
 }
 EVT_DESC_KEY = {
     EVT_CHANNEL_STOP: STOPPED_DESC_KEY,
@@ -1066,7 +1074,7 @@ class ModeResponse(DataResponse):
 
 
 class RateOtherResponse(DataResponse):
-    _types = (BooleanType,)
+    _types = (BooleanType,)  # NOTE: double check manually
 
 
 class RPMResponse(DataResponse):
@@ -1373,26 +1381,15 @@ class DeviceCommand(RequestMessage):
         "ShortSetterCommand",
         "VerboseSetterCommand",
     }
+    _types = None
 
     def __init__(self, addr, *args, code=None, rtype=None) -> None:
-        cls = type(self)
-        self._args = args
-        self._code = parse_none(code, cls._code)
-        rtype = parse_none(rtype, cls._rtype)
-        return super().__init__(addr, end=cls._end, response=None, rtype=rtype)
-
-    @property
-    def code(self):
-        return self._code
-
-    @property
-    def args(self):
-        return self._args
-
-    def __str__(self) -> str:
-        params = VB.join(str(a) for a in self.args)
-        # [CRLF] required for termination
-        return f"{self.addr}{self.code}{params}{self.end}"
+        self._args = self.convert_args(args)
+        self._code = parse_none(code, self._code)
+        rtype = parse_none(rtype, self._rtype)
+        return super().__init__(
+            addr, end=self._end, response=None, rtype=rtype
+        )
 
     def __repr__(self) -> str:
         cls = type(self)
@@ -1402,6 +1399,31 @@ class DeviceCommand(RequestMessage):
         args = [addr, code] if name in cls.BASE_CLASSES else [addr]
         optargs = [repr(a) for a in self.args]
         return f"{name}({", ".join(args + optargs)})"
+
+    def __str__(self) -> str:
+        params = VB.join(str(a) for a in self.args)
+        # [CRLF] required for termination
+        return f"{self.addr}{self.code}{params}{self.end}"
+
+    @property
+    def args(self):
+        return self._args
+
+    @property
+    def code(self):
+        return self._code
+
+    @property
+    def types(self):
+        return parse_none(self._types, tuple(type(a) for a in self._args))
+
+    @classmethod  # automatically convert if types provided by subclass
+    def convert_args(cls, *args):
+        types = cls._types
+        if isinstance(types, (tuple, list)) and len(args) == len(types):
+            return tuple(t(arg) for (t, arg) in zip(types, args))
+        else:
+            return args
 
 
 class ShortDeviceCommand(DeviceCommand):
@@ -1447,487 +1469,1110 @@ class VerboseSetterCommand(DeviceCommand):
 
 
 # 1.0 COMMUNICATIONS MANAGEMENT
-class GetChannelAddressing(ShortGetterCommand):
+class GetChannelAddressing(ShortGetterCommand):  # 1.1
+    """Get an integer representing whether (1) or not (0) channel addressing is enabled."""
+
     _rtype = ChannelAddressingResponse
     _code = GET_CHN_ADR
 
 
-class SetChannelAddressing(SetterCommand):
+class SetChannelAddressing(SetterCommand):  # 1.2
+    """Set whether channel messaging is enabled (1) or not enabled (0)."""
+
+    _types = (BooleanType,)
     _code = SET_CHN_ADR
 
 
-class GetEventMessaging(ShortGetterCommand):
+class GetEventMessaging(ShortGetterCommand):  # 1.3
+    """Get an integer representing whether (1) or not (0) event messages are enabled."""
+
     _rtype = EventMessagingResponse
     _code = GET_EVT_MSG
 
 
-class SetEventMessaging(SetterCommand):
+class SetEventMessaging(SetterCommand):  # 1.4
+    """Set whether event messages are enabled (1) or not enabled (0)."""
+
+    _types = (BooleanType,)
     _code = GET_EVT_MSG
 
 
-class GetSerialVersion(ShortGetterCommand):
+class GetSerialVersion(ShortGetterCommand):  # 1.5
+    """Get an integer representing the version of the serial protocol."""
+
     _rtype = SerialVersionResponse
     _code = GET_SERIAL_VER
 
 
 # 2.0 PUMP DRIVE
-class StartPump(ShortSetterCommand):
+class StartPump(ShortSetterCommand):  # 2.1
+    """Start pump."""
+
     _code = SET_START
 
 
-class StopPump(ShortSetterCommand):
+class StopPump(ShortSetterCommand):  # 2.2
+    """Stop pumping."""
+
     _code = SET_STOP
 
 
-class PausePump(ShortSetterCommand):
+class PausePump(ShortSetterCommand):  # 2.3
+    """Pause pumping (STOP in RPM or flow rate mode)."""
+
     _code = SET_PAUSE
 
 
-class GetDirection(ShortGetterCommand):
+class GetDirection(ShortGetterCommand):  # 2.4
+    """Get pump direction."""
+
     _rtype = DirectionResponse
     _code = GET_DIR
 
 
-class SetClockwise(ShortSetterCommand):
+class SetClockwise(ShortSetterCommand):  # 2.5
+    """Set rotation direction to clockwise."""
+
     _code = SET_CW
 
 
-class SetCounterClockwise(ShortSetterCommand):
+class SetCounterClockwise(ShortSetterCommand):  # 2.6
+    """Set rotation direction to counter-clockwise."""
+
     _code = SET_CCW
 
 
-class GetPumpError(ShortGetterCommand):
+class GetPumpError(ShortGetterCommand):  # 2.7
+    """Cause of `–` cannot run response = Parameter #1, Limiting value that was exceeded = Parameter #2."""
+
     _rtype = PumpErrorResponse
     _code = GET_DRIVE_ERR
 
 
 # 3.0 OPERATIONAL MODES AND SETTINGS
-class GetMode(ShortGetterCommand):
+class GetMode(ShortGetterCommand):  # 3.1
+    """Get the current channel or pump mode."""
+
     _rtype = ModeResponse
     _code = GET_MODE
 
 
-class SetModeRPM(ShortSetterCommand):
+class SetModeRPM(ShortSetterCommand):  # 3.2
+    """Set pump/channel to RPM mode."""
+
     _code = SET_MODE_RPM
 
 
-class SetModeFlowrate(ShortSetterCommand):
+class SetModeFlowrate(ShortSetterCommand):  # 3.3
+    """Set pump/channel to Flow Rate mode."""
+
     _code = SET_MODE_FLOWRATE
 
 
-class SetModeVolumeRateFixed(ShortSetterCommand):
+class SetModeVolumeRateFixed(ShortSetterCommand):  # 3.4
+    """Set pump/channel to Volume (at rate) mode."""
+
     _code = SET_MODE_VOL_RATE
 
 
-class SetModeVolumeTimeFixed(ShortSetterCommand):
+class SetModeVolumeTimeFixed(ShortSetterCommand):  # 3.5
+    """Set pump/channel to Volume (over time) mode."""
+
     _code = SET_MODE_VOL_TIME
 
 
-class SetModeVolumeRateCycled(ShortSetterCommand):
+class SetModeVolumeRateCycled(ShortSetterCommand):  # 3.6
+    """Set pump/channel to Volume + Pause mode."""
+
     _code = SET_MODE_VOL_PAUSE
 
 
-class SetModeTimeRateFixed(ShortSetterCommand):
+class SetModeTimeRateFixed(ShortSetterCommand):  # 3.7
+    """Set pump/channel to Time mode."""
+
     _code = SET_MODE_TIME
 
 
-class SetModeTimeRateCycled(ShortSetterCommand):
+class SetModeTimeRateCycled(ShortSetterCommand):  # 3.8
+    """Set pump/channel to Time + Pause mode."""
+
     _code = SET_MODE_RPM
 
 
-class GetRateOther(GetterCommand):
+class GetRateOther(GetterCommand):  # 3.9
+    """Get flow rate from RPM (S) or flow rate (f) when mode is not RPM or flow rate."""
+
+    _types = (BooleanType,)
     _rtype = RateOtherResponse
     _code = GET_RATE_OTHER
 
 
-class SetRateOther(SetterCommand):
+class SetRateOther(SetterCommand):  # 3.10
+    """Set RPM flow rate not in RPM or flow rate mode Discrete Type 3."""
+
+    _types = (DiscreteType3,)
     _code = SET_RATE_OTHER
 
 
-class GetRPM(ShortGetterCommand):
+class GetRPM(ShortGetterCommand):  # 3.11
+    """Gets the current speed setting in RPM."""
+
     _rtype = RPMResponse
     _code = GET_RPM
 
 
-class SetRPM(SetterCommand):
+class SetRPM(SetterCommand):  # 3.12
+    """RPM mode flow rate setting (0.01 RPM) Discrete Type 3."""
+
+    _types = (DiscreteType3,)
     _code = SET_RPM
 
 
-class GetFlowrate(ShortGetterCommand):
+class GetFlowrate(ShortGetterCommand):  # 3.13
+    """Get current volume/time flow rate (mL/min)."""
+
     _rtype = FlowrateResponse
     _code = GET_FLOWRATE
 
 
-class SetFlowrate(VerboseSetterCommand):
+class SetFlowrate(VerboseSetterCommand):  # 3.14
+    """Set RPM flow rate in volume/time mode (mL/min) Volume Type 2."""
+
+    _types = (VolumeType2,)
     _rtype = FlowrateResponse
     _code = SET_FLOWRATE
 
 
-class GetVolumeFixed(ShortGetterCommand):
+class GetVolumeFixed(ShortGetterCommand):  # 3.15
+    """Get the current setting for volume in mL."""
+
     _code = VolumeFixedResponse
     _code = GET_VOL
 
 
-class SetVolumeFixed(VerboseSetterCommand):
+class SetVolumeFixed(VerboseSetterCommand):  # 3.16
+    """Set the current setting for volume in mL. Volume Type 2."""
+
+    _types = (VolumeType2,)
     _rtype = VolumeFixedResponse
     _code = SET_VOL
 
 
-class GetTimeFixed(ShortGetterCommand):
+class GetTimeFixed(ShortGetterCommand):  # 3.17
+    """Get the current pump run time."""
+
     _rtype = TimeFixedResponse
     _code = GET_RUN_TIME
 
 
-class SetTimeFixed(SetterCommand):
+class SetTimeFixed(SetterCommand):  # 3.18
+    """Set current pump run time using Time Type 2."""
+
+    _types = (TimeType2,)
     _code = SET_RUN_TIME
 
 
-class GetPauseTime(ShortGetterCommand):
+class GetPauseTime(ShortGetterCommand):  # 3.19
+    """Get pumping pause time."""
+
     _rtype = PauseTimeResponse
     _code = GET_PAUSE_TIME
 
 
-class SetPauseTime(SetterCommand):
+class SetPauseTime(SetterCommand):  # 3.20
+    """Set pumping pause time using Time Type 2."""
+
+    _types = (TimeType2,)
     _code = SET_PAUSE_TIME
 
 
-class GetCycleCount(ShortGetterCommand):
+class GetCycleCount(ShortGetterCommand):  # 3.21
+    """Get pump cycle count."""
+
     _rtype = CycleCountResponse
     _code = GET_CYCLE_COUNT
 
 
-class SetCycleCount(SetterCommand):
+class SetCycleCount(SetterCommand):  # 3.22
+    """Set pump cycle count Discrete Type 2."""
+
+    _types = (DiscreteType2,)
     _code = SET_CYCLE_COUNT
 
 
-class GetMaxFlowrate(ShortGetterCommand):
+class GetMaxFlowrate(ShortGetterCommand):  # 3.23
+    """Max flow rate achievable with current settings mL/min."""
+
     # _rtype = MaxFlowRateResponse
     _code = GET_MAX_FLOWRATE
 
 
-class GetMaxFlowrateCalibrated(ShortGetterCommand):
+class GetMaxFlowrateCalibrated(ShortGetterCommand):  # 3.24
+    """Max flow rate achievable with current settings using calibration."""
+
     # _rtype = MaxFlowRateCalibratedResponse
     _code = GET_MAX_FLOWRATE_CALIBRATED
 
 
-class GetDispenseTimeByFlowrate(GetterCommand):
+class GetDispenseTimeByFlowrate(GetterCommand):  # 3.25
+    """Get time to dispense at a given volume at a given mL/min flow rate.
+
+    Vol, Volume Type 2; flow rate, Volume Type 2.
+    """
+
+    _types = (VolumeType2, VolumeType2)
     _rtype = DispenseTimeByFlowrateResponse
     _code = GET_DISPENSE_TIME_FLOWRATE
 
 
-class GetDispenseTimeByRPM(GetterCommand):
+class GetDispenseTimeByRPM(GetterCommand):  # 3.26
+    """Get time to dispense at a given volume at a given RPM.
+
+    mL, Volume Type 2; flow rate, Discrete Type 3.
+    """
+
+    _types = (VolumeType2, DiscreteType3)
     _rtype = DispenseTimeByRPMResponse
     _code = GET_DISPENSE_TIME_RPM
 
 
 # 4.0 CONFIGURATION
-class GetTubeDiameter(ShortGetterCommand):
+class GetTubeDiameter(ShortGetterCommand):  # 4.1
+    """Get the current tubing inside diameter in mm. 2 decimal places are returned."""
+
     _rtype = TubeDiameterResponse
     _code = GET_DIAMETER
 
 
-class SetTubeDiameter(SetterCommand):
+class SetTubeDiameter(SetterCommand):  # 4.2
+    """Set tubing inside diameter using Discrete Type 2."""
+
+    _types = (DiscreteType2,)
     _code = SET_DIAMETER
 
 
-class GetBacksteps(ShortGetterCommand):
+class GetBacksteps(ShortGetterCommand):  # 4.3
+    """Get the current backsteps setting."""
+
     _rtype = BackstepsResponse
     _code = GET_BACKSTEP
 
 
-class SetBacksteps(SetterCommand):
+class SetBacksteps(SetterCommand):  # 4.4
+    """Set the current backsteps setting using Discrete Type 2."""
+
+    _types = (DiscreteType2,)
     _code = SET_BACKSTEP
 
 
-class ResetConfigData(ShortSetterCommand):
+class ResetConfigData(ShortSetterCommand):  # 4.5
+    """Resets all user configurable data to default values."""
+
     _code = RESET_CONFIG_DATA
 
 
 # 5.0 CALIBRATION
-class GetCalDirection(ShortGetterCommand):
+class GetCalDirection(ShortGetterCommand):  # 5.1
+    """Get direction flow for calibration."""
+
     _rtype = CalDirectionResponse
     _code = GET_CAL_DIR
 
 
-class SetCalDirection(SetterCommand):
+class SetCalDirection(SetterCommand):  # 5.2
+    """Set direction flow for calibration J or K using DIRECTION format."""
+
+    _types = (DirectionType,)
     _code = SET_CAL_DIR
 
 
-class GetCalTargetVolume(ShortGetterCommand):
+class GetCalTargetVolume(ShortGetterCommand):  # 5.3
+    """Get the target volume to pump for calibrating, mL."""
+
     _rtype = CalTargetVolumeResponse
     _code = GET_TARGET_VOL
 
 
-class SetCalTargetVolume(VerboseSetterCommand):
+class SetCalTargetVolume(VerboseSetterCommand):  # 5.4
+    """Set the target volume to pump for calibrating using Volume Type 2."""
+
+    _types = (VolumeType2,)
     _rtype = CalTargetVolumeResponse
     _code = SET_TARGET_VOL
 
 
-class SetCalActualVolume(VerboseSetterCommand):
+class SetCalActualVolume(VerboseSetterCommand):  # 5.5
+    """Set actual volume measured during calibration, mL Volume Type 2."""
+
+    _types = (VolumeType2,)
     _rtype = CalActualVolumeResponse
     _code = SET_ACTUAL_VOL
 
 
-class GetCalTime(ShortGetterCommand):
+class GetCalTime(ShortGetterCommand):  # 5.6
+    """Get the current calibration time."""
+
     _rtype = CalTimeResponse
     _code = GET_CAL_TIME
 
 
-class SetCalTime(SetterCommand):
+class SetCalTime(SetterCommand):  # 5.7
+    """Set the current calibration time using Time Type 2."""
+
+    _types = (TimeType2,)
     _code = SET_CAL_TIME
 
 
-class GetRuntimeSinceCal(ShortGetterCommand):
+class GetRuntimeSinceCal(ShortGetterCommand):  # 5.8
+    """Get the channel run time since last calibration."""
+
     _rtype = RuntimeSinceCalResponse
     _code = GET_RUNTIME_SINCE
 
 
-class StartCalibration(ShortSetterCommand):
+class StartCalibration(ShortSetterCommand):  # 5.9
+    """Start calibration on a channel(s)."""
+
     _code = SET_CAL_START
 
 
-class CancelCalibration(ShortSetterCommand):
+class CancelCalibration(ShortSetterCommand):  # 5.10
+    """Cancel calibration."""
+
     _code = SET_CAL_CANCEL
 
 
 # 6.0 SYSTEM
-class GetFirmwareVersion(ShortGetterCommand):
+class GetFirmwareVersion(ShortGetterCommand):  # 6.1
+    """Returns the pump firmware version."""
+
     _rtype = FirmwareVersionResponse
     _code = GET_FIRMWARE
 
 
-class SetFactoryRollerVolume(SetterCommand):
+class SetFactoryRollerVolume(SetterCommand):  # 6.2
+    """Change factory roller step volume for a particular roller count and tubing size.
+
+    - roller count (6, 8, 12), Discrete Type 1
+    - index of the tubing diameter (see Table 1), Discrete Type 1
+    - RSV, Volume Type 2.
+    """
+
+    _types = (DiscreteType1, DiscreteType1, VolumeType2)
     # NOTE: distinguish from SetRollerVolume?
     _code = SET_FACTORY_ROLLVOL
 
 
-class SaveSetRollerVolume(ShortSetterCommand):
+class SaveSetRollerVolume(ShortSetterCommand):  # 6.3
+    """Save set roller step settings."""
+
     # NOTE: distinguish from SetRollerVolume?
     _code = SAVE_SET_ROLLVOL
 
 
-class ResetRollerVolume(ShortSetterCommand):
+class ResetRollerVolume(ShortSetterCommand):  # 6.4
+    """Reset roller step volume table to defaults."""
+
     _code = RESET_ROLLVOL
 
 
-class SetPumpDisplayName(SetterCommand):
+class SetPumpDisplayName(SetterCommand):  # 6.5
+    """Set pump name for display under remote control–String."""
+
+    _types = (StringType,)
     _code = SET_PUMP_NAME
 
 
-class GetPumpSerialNo(ShortGetterCommand):
+class GetPumpSerialNo(ShortGetterCommand):  # 6.6
+    """Get pump serial number."""
+
     _rtype = PumpSerialNoResponse
     _code = GET_SERIALNO
 
 
-class SetPumpSerialNo(SetterCommand):
+class SetPumpSerialNo(SetterCommand):  # 6.7
+    """Set pump serial number–String."""
+
+    _types = (StringType,)
     _code = SET_SERIALNO
 
 
-class GetPumpLanguage(ShortGetterCommand):
+class GetPumpLanguage(ShortGetterCommand):  # 6.8
+    """Get the current pump language."""
+
     _rtype = PumpLanguageResponse
     _code = GET_LANG
 
 
-class SetPumpLanguage(SetterCommand):
+class SetPumpLanguage(SetterCommand):  # 6.9
+    """Set current pump language–Language."""
+
+    _types = (LanguageType,)
     _code = SET_LANG
 
 
-class GetNumberOfChannels(ShortGetterCommand):
+class GetNumberOfChannels(ShortGetterCommand):  # 6.10
+    """Get number of pump channels."""
+
     _rtype = NumberOfChannelsResponse
     _code = GET_CHANNELNO
 
 
-class SetNumberOfChannels(SetterCommand):
+class SetNumberOfChannels(SetterCommand):  # 6.11
+    """Configure number of pump channels. Discrete Type 2."""
+
+    _types = (DiscreteType2,)
     _code = SET_CHANNELNO
 
 
-class GetNumberOfRollers(ShortGetterCommand):
+class GetNumberOfRollers(ShortGetterCommand):  # 6.12
+    """Get number of rollers for channel."""
+
     _rtype = NumberOfRollersResponse
     _code = GET_ROLLERNO
 
 
-class SetNumberOfRollers(SetterCommand):
+class SetNumberOfRollers(SetterCommand):  # 6.13
+    """Set number of rollers for channel. Discrete Type 2."""
+
+    _types = (DiscreteType2,)
     _code = SET_ROLLERNO
 
 
-class GetRevsSinceReset(ShortGetterCommand):
+class GetRevsSinceReset(ShortGetterCommand):  # 6.14
+    """Get total number of revolutions since last reset."""
+
     _rtype = RevsSinceResetResponse
     _code = GET_REV_SINCE_RESET
 
 
-class GetVolumeSinceReset(ShortGetterCommand):
+class GetVolumeSinceReset(ShortGetterCommand):  # 6.15
+    """Get channel total volume pumped since last reset, mL."""
+
     # NOTE: distinguish from GetTotalVolumeSinceReset?
     _rtype = VolumeSinceResetResponse
     _code = GET_VOL_SINCE_RESET
 
 
-class GetTimePumpedSinceReset(ShortGetterCommand):
+class GetTimePumpedSinceReset(ShortGetterCommand):  # 6.16
+    """Get total time pumped for a channel since last reset."""
+
     _rtype = TimePumpedSinceResetResponse
     _code = GET_TIME_SINCE_RESET
 
 
-class EnableGUI(ShortSetterCommand):
+class EnableGUI(ShortSetterCommand):  # 6.17
+    """Set control from the pump user interface."""
+
     _code = SET_GUI_ON
 
 
-class DiableGIU(ShortSetterCommand):
+class DiableGIU(ShortSetterCommand):  # 6.18
+    """Disable pump user interface."""
+
     _code = SET_GUI_OFF
 
 
-class SetDisplayNumbers(SetterCommand):
+class SetDisplayNumbers(SetterCommand):  # 6.19
+    """Write numbers to the pump to display while under external control.
+
+    - String (<17 characters).
+    """
+
+    _types = (StringType,)
     _code = SET_DISPLAY_NUM
 
 
-class SetDisplayCharacters(SetterCommand):
+class SetDisplayCharacters(SetterCommand):  # 6.20
+    """Write numbers to the pump to display while under external control.
+
+    - String (<17 characters).
+    """
+
+    _types = (StringType,)
     _code = SET_DISPLAY_CHR
 
 
-class GetRunStatus(StatusGetterCommand):
+class GetRunStatus(StatusGetterCommand):  # 6.21
+    """Returns whether the pump is currently running or not."""
+
     _code = GET_RUN_STATUS
 
 
-class GetModelInfo(ShortGetterCommand):
+class GetModelInfo(ShortGetterCommand):  # 6.22
+    """Returns pump model information.
+
+    Returns the following fields, each separated by a space:
+    - Pump model description:
+     A text field describing the model of pump.
+     This description may contain spaces.
+    - Pump software version:
+     The version of software currently running in the pump.
+    - Pump head model type code:
+     A code describing the type of pump head installed.
+     The first digit represents the number of channels for the pump, and the second 2 digits represent the number of rollers.
+     XX if channels do not have the same number of rollers.
+    """
+
     _rtype = ModelInfoResponse
     _code = GET_MODEL_INFO
 
 
-class GetPumpHeadModel(ShortGetterCommand):
+class GetPumpHeadModel(ShortGetterCommand):  # 6.23
+    """Returns the pump head model type code
+
+    - A 4 digit code indicating the ID number of the pump head.
+    The first two digits represent the number of channels on the head,
+    and the second 2 digits represent the number of rollers.
+    """
+
     _rtype = PumpHeadModelResponse
     _code = GET_HEAD_CODE
 
 
-class SetPumpHeadModel(SetterCommand):
+class SetPumpHeadModel(SetterCommand):  # 6.24
+    """Sets the pump head model type code
+
+    – An up-to 4 digit code setting the ID number of the pump head.
+     The first two digits encode the number of channels on the head,
+     the second two digits encode the number of rollers on the head.
+
+    This command sets all roller counts to the same value.
+    To individually set roller counts for each channel,
+    use the non-legacy command designed for this operation.
+
+    Discrete Type 2.
+    """
+
+    _types = (DiscreteType2,)
     _code = SET_HEAD_CODE
 
 
-class GetPumpTime10ths(ShortGetterCommand):
+class GetPumpTime10ths(ShortGetterCommand):  # 6.25
+    """Get the current setting for pump time in 1/10 second."""
+
     # NOTE: distinguish from GetTimeFixed?
     _rtype = PumpTime10thsResponse
     _code = GET_TIME_10THS
 
 
-class SetPumpTime10ths(SetterCommand):
+class SetPumpTime10ths(SetterCommand):  # 6.26
+    """Set the current setting for pump time in 1/10 second. Discrete Type 2."""
+
     # NOTE: distinguish from SetTimeFixed?
+    _types = (DiscreteType2,)
     _code = SET_TIME_10THS
 
 
-class SetDispenseTimeMins(SetterCommand):
+class SetDispenseTimeMins(SetterCommand):  # 6.27
+    """Set the current run time setting for dispensing in minutes. Discrete Type 5."""
+
     # NOTE: distinguish from SetTimeFixed?
+    _types = (DiscreteType5,)
     _code = SET_TIME_MINS
 
 
-class SetDispenseTimeHrs(SetterCommand):
+class SetDispenseTimeHrs(SetterCommand):  # 6.28
+    """Set the current run time setting for dispensing in hours. Discrete Type 5."""
+
     # NOTE: distinguish from SetTimeFixed?
+    _types = (DiscreteType5,)
     _code = SET_TIME_HRS
 
 
-class GetLowOrderSteps(ShortGetterCommand):
+class GetLowOrderSteps(ShortGetterCommand):  # 6.29
+    """Get the low order roller steps. The total number of roller steps which
+    are dispensed during an operation is computed as:[(u*65536]+(U)]."""
+
     _rtype = LowOrderStepsResponse
     _code = GET_ROLLSTEP_LO
 
 
-class SetLowOrderSteps(SetterCommand):
-    _code = GET_ROLLSTEP_LO
+class SetLowOrderSteps(SetterCommand):  # 6.30
+    """Set the high order roller steps. Discrete Type 6."""
+
+    _types = (DiscreteType6,)
+    _code = SET_ROLLSTEP_LO
 
 
-class GetHighOrderSteps(ShortGetterCommand):
+class GetHighOrderSteps(ShortGetterCommand):  # 6.31
+    """Get the high order roller steps. The total number of roller steps which
+    are dispensed during an operation is computed as:[(u*65536]+(U)]."""
+
     _rtype = HighOrderStepsResponse
     _code = GET_ROLLSTEP_HI
 
 
-class SetHighOrderSteps(SetterCommand):
+class SetHighOrderSteps(SetterCommand):  # 6.32
+    """Set the high order roller steps. Discrete Type 6."""
+
+    _types = (DiscreteType6,)
     _code = SET_ROLLSTEP_HI
 
 
-class GetRollerVolume(ShortGetterCommand):
+class GetRollerVolume(ShortGetterCommand):  # 6.33
+    """Get the current roller step volume
+
+    Based on the current calibration, tubing diameter and roller count.
+    If no calibration has been performed the default volume is returned.
+    """
+
     _rtype = RollerVolumeResponse
     _code = GET_ROLLVOL_CAL
 
 
-class SetRollerVolume(SetterCommand):
+class SetRollerVolume(SetterCommand):  # 6.34
+    """Set the calibrated roller step volume to use for this pump or channel.
+
+    This value is used as the calibrated value and is overwritten by
+    subsequent calibrations and reset by changing tubing diameter.
+    Volume Type 2.
+    """
+
     # NOTE: distinguish from SetFactoryRollerVolume
+    _types = (VolumeType2,)
     _code = SET_ROLLVOL_CAL
 
 
-class ResetCalibrationData(ShortSetterCommand):
+class ResetCalibrationData(ShortSetterCommand):  # 6.35
+    """Reset the pump to discard calibration data, use default roller step volume."""
+
     # NOTE: distinguish from ResetConfigData
     _code = RESET_CAL
 
 
-class GetPauseTime10ths(ShortGetterCommand):
+class GetPauseTime10ths(ShortGetterCommand):  # 6.36
+    """Get the current setting for pause time in 1/10 second."""
+
     # NOTE: distinguish from GetPauseTime?
     _rtype = PauseTime10thsResponse
     _code = GET_PAUSE_10THS
 
 
-class SetPauseTime10ths(SetterCommand):
+class SetPauseTime10ths(SetterCommand):  # 6.37
+    """Set the current setting for pause time in 1/10 second. Discrete Type 2."""
+
     # NOTE: distinguish from SetPauseTime?
+    _types = (DiscreteType2,)
     _code = SET_PAUSE_10THS
 
 
-class SetPauseTimeMins(SetterCommand):
+class SetPauseTimeMins(SetterCommand):  # 6.38
+    """Set the current setting for pause time in minutes. Discrete Type 5."""
+
     # NOTE: distinguish from SetPauseTime?
+    _types = (DiscreteType5,)
     _code = SET_PAUSE_MINS
 
 
-class SetPauseTimeHrs(SetterCommand):
+class SetPauseTimeHrs(SetterCommand):  # 6.39
+    """Set the current setting for pause time in hours. Discrete Type 5."""
+
     # NOTE: distinguish from SetPauseTime?
+    _types = (DiscreteType5,)
     _code = SET_PAUSE_HRS
 
 
-class GetTotalVolumeSinceReset(GetterCommand):
+class GetTotalVolumeSinceReset(GetterCommand):  # 6.40
+    """Get the total volume dispensed since the last reset in µL, mL or liters."""
+
     # NOTE: distinguish from GetVolumeSinceReset?
+    # _types = ()
     # _rtype = TotalVolumeSinceResetResponse
     _code = GET_VOLALL_SINCE_RESET
 
 
-class SavePumpSettings(ShortSetterCommand):
+class SavePumpSettings(ShortSetterCommand):  # 6.41
+    """Saves the current pump settings values to memory."""
+
     _code = SAVE_SET_ALL
 
 
-class GetFootSwitchStatus(StatusGetterCommand):
+class GetFootSwitchStatus(StatusGetterCommand):  # 6.42
+    """Get the current state of the foot switch."""
+
     _code = GET_FOOTSWITCH_STATUS
 
 
-class RegloICCChannel:
+class RegloChannel:
+    _serial = None
+
     def __init__(
-        self, addr: int = 1, serial: None | str | Serial = None
+        self,
+        addr: int = 1,
+        serial: None | str | Serial = _serial,
+        tube_id=None | float,
     ) -> None:
         # Open serial port with data format corresponding to the RegloICC pump
         self.addr = addr
-        self.serial = self.find_serial(serial)
+        self.serial = serial
+        self._log = DataFrame(
+            columns=[
+                "datetime",
+                "request",
+                "response",
+                "request_string",
+                "response_string",
+            ]
+        )
+        self._current_request = None
+
         pass
 
-    def request(self, code, *args, addr=None, receive=False):
-        """Send a request to the pump and (optionally) read the response."""
-        addr = parse_none(addr, self.addr)
-        variables = VB.join(str(a) for a in args)
-        # [CR] required for termination
-        command = f"{addr}{code}{variables}{CRLF}"
-        self.serial.write(command.encode())
-        print(f"[RegloICC] Requested: {command}")
-        if receive:
-            time.sleep(0.1)  # process time
-            return command, self.receive()
-        return command
+    def __repr__(self) -> str:
+        return f"RegloChannel({self.addr, self.serial})"
 
-    def receive(self):
-        nbytes = self.serial.in_waiting
-        response = self.serial.read(nbytes).decode().strip()
-        time.sleep(0.1)  # time to process
-        print(f"[RegloICC] Response: {response}")
-        return response
+    @property
+    def serial(self):
+        return self._serial
 
-    def find_serial(self, serial):
-        if isinstance(serial, Serial):
-            return serial
-        return Serial(
-            get_port(serial),
-            9600,
-            parity=PARITY_NONE,
-            stopbits=STOPBITS_ONE,
-            bytesize=EIGHTBITS,
+    @serial.setter
+    def serial(self, value):
+        if isinstance(value, Serial):
+            serial = value
+        elif isinstance(value, (str, type(None))):
+            serial = Serial(
+                get_port(value),
+                9600,
+                parity=PARITY_NONE,
+                stopbits=STOPBITS_ONE,
+                bytesize=EIGHTBITS,
+            )
+
+        self._serial = serial
+        return self._serial
+
+    @property
+    def current_request(self):
+        return self._current_request
+
+    @current_request.setter
+    def current_request(self, value: RequestMessage):
+        self.update_log(value)
+        self._current_request = value
+        return self.current_request
+
+    @property
+    def current_response(self):
+        if self.current_request is None:
+            return None
+        return self.current_request.response
+
+    @property
+    def log(self):
+        return self._log
+
+    def update_log(self, request: RequestMessage):
+        row_new = dict(
+            datetime=request.datetime,
+            request=request,
+            response=request.response,
+            request_string=str(request),
+            response_string=str(request.response),
         )
+        self._log = pdcat([self._log, DataFrame(row_new)], ignore_index=True)
+        return self.log
+
+    def send_request(
+        self,
+        request: RequestMessage | type[RequestMessage],
+        *args,
+        addr=None,
+        **kwargs,
+    ):
+        """Send a new request to the pump and read the response."""
+        addr = parse_none(addr, self.addr)
+
+        if isinstance(request, type) and issubclass(request, RequestMessage):
+            request = request(addr, *args, **kwargs)
+            return self.send_request(request)
+
+        if self.serial is None:
+            return None
+
+        request(self.serial)
+        self.current_request = request
+        return request.response
+
+    # 2.0 PUMP DRIVE
+    def start(self):
+        return self.send_request(StartPump)
+
+    def stop(self):
+        return self.send_request(StopPump)
+
+    def pause(self):
+        return self.send_request(PausePump)
+
+    @property
+    def direction(self):
+        return self.send_request(GetDirection)
+
+    @direction.setter
+    def direction(self, value):
+        if DIR_KEY[value] == CW:
+            return self.send_request(SetClockwise)
+        elif DIR_KEY[value] == CCW:
+            return self.send_request(SetCounterClockwise)
+
+    @property
+    def error(self):
+        return self.send_request(GetPumpError)
+
+    # 3.0 OPERATIONAL MODES AND SETTINGS
+    @property
+    def mode(self):
+        return self.send_request(GetMode)
+
+    @mode.setter
+    def mode(self, value):
+        if value == MODE_RPM:
+            return self.send_request(SetModeRPM)
+        elif value == MODE_FLOWRATE:
+            return self.send_request(SetModeFlowrate)
+        elif value == MODE_VOL_RATE:
+            return self.send_request(SetModeVolumeRateFixed)
+        elif value == MODE_VOL_TIME:
+            return self.send_request(SetModeVolumeTimeFixed)
+        elif value == MODE_VOL_PAUSE:
+            return self.send_request(SetModeVolumeRateCycled)
+        elif value == MODE_TIME:
+            return self.send_request(SetModeTimeRateFixed)
+        elif value == MODE_TIME_PAUSE:
+            return self.send_request(SetModeTimeRateCycled)
+        else:
+            return None
+
+    @property
+    def rate_other(self):
+        return self.send_request(GetRateOther)
+
+    @rate_other.setter
+    def rate_other(self, value):
+        return self.send_request(SetRateOther, value)
+
+    @property
+    def rpm(self):
+        return self.send_request(GetRPM)
+
+    @rpm.setter
+    def rpm(self, value):
+        return self.send_request(SetRPM, value)
+
+    @property
+    def flowrate(self):
+        return self.send_request(GetFlowrate)
+
+    @flowrate.setter
+    def flowrate(self, value):
+        return self.send_request(SetFlowrate, value)
+
+    @property
+    def volume_fixed(self):
+        return self.send_request(GetVolumeFixed)
+
+    @volume_fixed.setter
+    def volume_fixed(self, value):
+        return self.send_request(SetVolumeFixed, value)
+
+    @property
+    def time_fixed(self):
+        return self.send_request(GetTimeFixed)
+
+    @time_fixed.setter
+    def time_fixed(self, value):
+        return self.send_request(SetTimeFixed, value)
+
+    @property
+    def cycle_pause(self):
+        return self.send_request(GetPauseTime)
+
+    @cycle_pause.setter
+    def cycle_pause(self, value):
+        return self.send_request(SetPauseTime, value)
+
+    @property
+    def cycle_count(self):
+        return self.send_request(GetCycleCount)
+
+    @cycle_count.setter
+    def cycle_count(self, value):
+        return self.send_request(SetCycleCount, value)
+
+    @property
+    def maxflowrate(self):
+        return self.send_request(GetMaxFlowrate)
+
+    @property
+    def maxflowrate_calibrated(self):
+        return self.send_request(GetMaxFlowrateCalibrated)
+
+    def flowrate2dispense(self, volume, flowrate):
+        return self.send_request(GetDispenseTimeByFlowrate, volume, flowrate)
+
+    def rpm2dispense(self, volume, rpm):
+        return self.send_request(GetDispenseTimeByFlowrate, volume, rpm)
+
+    # 4.0 CONFIGURATION
+    @property
+    def tube_diameter(self):
+        return self.send_request(GetTubeDiameter)
+
+    @tube_diameter.setter
+    def tube_diameter(self, value):
+        return self.send_request(SetTubeDiameter, value)
+
+    @property
+    def backsteps(self):
+        return self.send_request(GetBacksteps)
+
+    @backsteps.setter
+    def backsteps(self, value):
+        return self.send_request(SetBacksteps, value)
+
+    def reset(self):
+        return self.send_request(ResetConfigData)
+
+    # 5.0 CALIBRATION
+    @property
+    def cal_direction(self):
+        return self.send_request(GetCalDirection)
+
+    @cal_direction.setter
+    def cal_direction(self, value):
+        return self.send_request(SetCalDirection, value)
+
+    @property
+    def cal_targetvol(self):
+        return self.send_request(GetCalTargetVolume)
+
+    @cal_targetvol.setter
+    def cal_targetvol(self, value):
+        return self.send_request(SetCalTargetVolume, value)
+
+    @property
+    def cal_actualvol(self):
+        return getattr(self, "_cal_actualvol", None)
+
+    @cal_actualvol.setter
+    def cal_actualvol(self, value):
+        self._cal_actualvol = self.send_request(SetCalActualVolume, value)
+        return self.cal_actualvol
+
+    @property
+    def cal_time(self):
+        return self.send_request(GetCalTime)
+
+    @cal_time.setter
+    def cal_time(self, value):
+        return self.send_request(SetCalTime, value)
+
+    @property
+    def runtime_since_cal(self):
+        return self.send_request(GetRuntimeSinceCal)
+
+    def start_calibration(self):
+        return self.send_request(StartCalibration)
+
+    def cancel_calibration(self):
+        return self.send_request(CancelCalibration)
+
+    # 6.0 SYSTEM
+    @property
+    def firmware_version(self):
+        return self.send_request(GetFirmwareVersion)
+
+    # @property
+    # def factory_rollervol(self):
+    #     return self.send_request(SetFactoryRollerVolume)
+
+    @property
+    def num_rollers(self):
+        return self.send_request(GetNumberOfRollers)
+
+    @num_rollers.setter
+    def num_rollers(self, value):
+        return self.send_request(SetNumberOfRollers, value)
+
+    @property
+    def revs_since_reset(self):
+        return self.send_request(GetRevsSinceReset)
+
+    @property
+    def vol_since_reset(self):
+        return self.send_request(GetVolumeSinceReset)
+
+    @property
+    def pumptime_since_reset(self):
+        return self.send_request(GetTimePumpedSinceReset)
+
+    @property
+    def pumptime(self):
+        return self.send_request(GetPumpTime10ths)
+
+    @pumptime.setter
+    def pumptime(self, value: int | tuple[int, str | None]):
+        return self._set_time_in_units(
+            SetPumpTime10ths, SetDispenseTimeMins, SetDispenseTimeHrs, value
+        )
+
+    @property
+    def loworder_steps(self):
+        return self.send_request(GetLowOrderSteps)
+
+    @loworder_steps.setter
+    def loworder_steps(self, value):
+        return self.send_request(SetLowOrderSteps, value)
+
+    @property
+    def highorder_steps(self):
+        return self.send_request(GetHighOrderSteps)
+
+    @highorder_steps.setter
+    def highorder_steps(self, value):
+        return self.send_request(SetHighOrderSteps, value)
+
+    @property
+    def rollervol(self):
+        return self.send_request(GetRollerVolume)
+
+    @rollervol.setter
+    def rollervol(self, value):
+        return self.send_request(SetRollerVolume, value)
+
+    def reset_calibration(self):
+        return self.send_request(ResetCalibrationData)
+
+    @property
+    def pausetime(self):
+        return self.send_request(GetPauseTime10ths)
+
+    @pausetime.setter
+    def pausetime(self, value: int | tuple[int, str | None]):
+        return self._set_time_in_units(
+            SetPauseTime10ths, SetPauseTimeMins, SetPauseTimeHrs, value
+        )
+
+    @property
+    def totalvol_since_reset(self):
+        return self.send_request(GetTotalVolumeSinceReset)
+
+    def save_pump_settings(self):
+        return self.send_request(SavePumpSettings)
+
+    @property
+    def footswitch_status(self):
+        return self.send_request(GetFootSwitchStatus)
+
+    # HELPER
+    def _set_time_in_units(self, settenths, setmins, sethrs, value):
+        value, unit = (value, None) if isinstance(value, int) else value
+        if unit in ("10ths", "10ths", "1/10", "0.1", "tenth", "tenths", None):
+            return self.send_request(settenths, value)
+        elif unit.lower in ("min", "mins", "minute", "minutes", "m"):
+            return self.send_request(setmins, value)
+        elif unit.lower in ("hr", "hrs", "hour", "hours", "h"):
+            return self.send_request(sethrs, value)
 
 
 class RegloICC:
