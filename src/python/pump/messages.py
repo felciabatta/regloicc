@@ -1,0 +1,1502 @@
+from datetime import datetime
+
+from numpy import uint
+from serial import Serial
+
+from ..utils import parse_none
+from .constants import (
+    AT,
+    CR,
+    CRLF,
+    EVT_CHANNEL_STOP,
+    EVT_CHANNEL_UPDATE,
+    EVT_ID,
+    GET_BACKSTEP,
+    GET_CAL_DIR,
+    GET_CAL_TIME,
+    GET_CHANNELNO,
+    GET_CHN_ADR,
+    GET_CYCLE_COUNT,
+    GET_DIAMETER,
+    GET_DIR,
+    GET_DISPENSE_TIME_FLOWRATE,
+    GET_DISPENSE_TIME_RPM,
+    GET_DRIVE_ERR,
+    GET_EVT_MSG,
+    GET_FIRMWARE,
+    GET_FLOWRATE,
+    GET_FOOTSWITCH_STATUS,
+    GET_HEAD_CODE,
+    GET_LANG,
+    GET_MAX_FLOWRATE,
+    GET_MAX_FLOWRATE_CALIBRATED,
+    GET_MODE,
+    GET_MODEL_INFO,
+    GET_PAUSE_10THS,
+    GET_PAUSE_TIME,
+    GET_RATE_OTHER,
+    GET_REV_SINCE_RESET,
+    GET_ROLLERNO,
+    GET_ROLLSTEP_HI,
+    GET_ROLLSTEP_LO,
+    GET_ROLLVOL_CAL,
+    GET_RPM,
+    GET_RUN_STATUS,
+    GET_RUN_TIME,
+    GET_RUNTIME_SINCE,
+    GET_SERIAL_VER,
+    GET_SERIALNO,
+    GET_TARGET_VOL,
+    GET_TIME_10THS,
+    GET_TIME_SINCE_RESET,
+    GET_VOL,
+    GET_VOL_SINCE_RESET,
+    GET_VOLALL_SINCE_RESET,
+    NEGATIVE,
+    POSITIVE,
+    RESET_CAL,
+    RESET_CONFIG_DATA,
+    RESET_ROLLVOL,
+    SAVE_SET_ALL,
+    SAVE_SET_ROLLVOL,
+    SET_ACTUAL_VOL,
+    SET_BACKSTEP,
+    SET_CAL_CANCEL,
+    SET_CAL_DIR,
+    SET_CAL_START,
+    SET_CAL_TIME,
+    SET_CCW,
+    SET_CHANNELNO,
+    SET_CHN_ADR,
+    SET_CW,
+    SET_CYCLE_COUNT,
+    SET_DIAMETER,
+    SET_DISPLAY_CHR,
+    SET_DISPLAY_NUM,
+    SET_FACTORY_ROLLVOL,
+    SET_FLOWRATE,
+    SET_GUI_OFF,
+    SET_GUI_ON,
+    SET_HEAD_CODE,
+    SET_LANG,
+    SET_MODE_FLOWRATE,
+    SET_MODE_RPM,
+    SET_MODE_TIME,
+    SET_MODE_VOL_PAUSE,
+    SET_MODE_VOL_RATE,
+    SET_MODE_VOL_TIME,
+    SET_PAUSE,
+    SET_PAUSE_10THS,
+    SET_PAUSE_HRS,
+    SET_PAUSE_MINS,
+    SET_PAUSE_TIME,
+    SET_PUMP_NAME,
+    SET_RATE_OTHER,
+    SET_ROLLERNO,
+    SET_ROLLSTEP_HI,
+    SET_ROLLSTEP_LO,
+    SET_ROLLVOL_CAL,
+    SET_RPM,
+    SET_RUN_TIME,
+    SET_SERIALNO,
+    SET_START,
+    SET_STOP,
+    SET_TARGET_VOL,
+    SET_TIME_10THS,
+    SET_TIME_HRS,
+    SET_TIME_MINS,
+    SET_VOL,
+    SP,
+    STATUS_DESC_KEY,
+    SUCCESSFULL,
+    UNSUCCESSFULL,
+    VB,
+)
+from .reglotypes import (
+    BooleanType,
+    CharType,
+    DiameterType,
+    DirectionType,
+    DiscreteType1,
+    DiscreteType2,
+    DiscreteType3,
+    DiscreteType4,
+    DiscreteType5,
+    DiscreteType6,
+    FractionalType,
+    LanguageType,
+    StringType,
+    TimeType1,
+    TimeType2,
+    VolumeType1,
+    VolumeType2,
+)
+
+
+class RegloMessage:
+    """Abstract base class for all messages sent or received"""
+
+    _datetime = None
+
+    def __init__(self, *, datetime=_datetime) -> None:
+        self.datetime = datetime
+        pass
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}()"
+
+    @classmethod
+    def now(cls):
+        return datetime.now().astimezone()
+
+    @property
+    def datetime(self):
+        return self._datetime
+
+    @datetime.setter
+    def datetime(self, value):
+        self._datetime = value
+
+    def log_datetime(self):
+        self.datetime = self.now()
+        return self.datetime
+
+
+class DeviceMessage(RegloMessage):
+    """Abstract base class for messages received from the device"""
+
+
+class StatusResponse(DeviceMessage):
+    BYTES = 1
+
+    def __init__(self, status: str, *, desc="", **kwargs) -> None:
+        assert len(status) == 1, "StatusResponse must be a single character."
+        self.status = status
+        self.desc = desc
+        return super().__init__(**kwargs)
+
+    def __repr__(self) -> str:
+        name = type(self).__name__
+        args = f"{self!r}" if (name == StatusResponse.__name__) else ""
+        return f"{name}({args})"
+
+    def __str__(self) -> str:
+        return self.status
+
+    @classmethod
+    def from_str(cls, s: str, **kwargs):
+        assert s.isascii(), "Encountered non-ASCII response."
+        assert len(s) == 1, "Encountered multi-character response."
+        match s:
+            case r if r == SUCCESSFULL:
+                return StatusSuccessfull(**kwargs)
+            case r if r == UNSUCCESSFULL:
+                return StatusUnsuccessfull(**kwargs)
+            case r if r == NEGATIVE:
+                return StatusNegative(**kwargs)
+            case r if r == POSITIVE:
+                return StatusPositive(**kwargs)
+            case _:
+                return StatusUnknown(s, **kwargs)
+
+    @classmethod
+    def read(cls, serial: Serial):
+        s = serial.read(cls.BYTES).decode()
+        return cls.from_str(s, datetime=cls.now())
+
+
+class StatusUnknown(StatusResponse):
+    def __init__(self, status: str, **kwargs) -> None:
+        super().__init__(status, desc="Unknown status.", **kwargs)
+
+
+class StatusSuccessfull(StatusResponse):
+    def __init__(self, **kwargs) -> None:
+        stat = SUCCESSFULL
+        desc = STATUS_DESC_KEY[stat]
+        return super().__init__(stat, desc=desc, **kwargs)
+
+
+class StatusUnsuccessfull(StatusResponse):
+    def __init__(self, **kwargs) -> None:
+        stat = UNSUCCESSFULL
+        desc = STATUS_DESC_KEY[stat]
+        return super().__init__(stat, desc=desc, **kwargs)
+
+
+class StatusNegative(StatusResponse):
+    def __init__(self, desc=None, **kwargs) -> None:
+        stat = NEGATIVE
+        desc = parse_none(desc, STATUS_DESC_KEY[stat])
+        return super().__init__(stat, desc=desc, **kwargs)
+
+
+class StatusPositive(StatusResponse):
+    def __init__(self, desc=None, **kwargs) -> None:
+        stat = POSITIVE
+        desc = parse_none(desc, STATUS_DESC_KEY[stat])
+        return super().__init__(stat, desc=desc, **kwargs)
+
+
+class DataMessage(DeviceMessage):
+    # DEFAULTS
+    _BEGIN = ""
+    _SEP = SP
+    _END = CRLF
+    _types = None
+
+    def __init__(
+        self, *args, begin=_BEGIN, sep=_SEP, end=_END, **kwargs
+    ) -> None:
+        self._args = args
+        self._begin = begin
+        self._sep = sep
+        self._end = end
+        return super().__init__(**kwargs)
+
+    @property
+    def args(self):
+        return self._args
+
+    @property
+    def types(self):
+        return parse_none(self._types, tuple(type(a) for a in self._args))
+
+    @property
+    def begin(self):
+        return self._begin
+
+    @property
+    def sep(self):
+        return self._sep
+
+    @property
+    def end(self):
+        return self._end
+
+    def __len__(self):
+        return len(self.args)
+
+    def __str__(self) -> str:
+        args = self.sep.join(str(a) for a in self.args)
+        return f"{self.begin}{args}{self.end}"
+
+    def __repr__(self) -> str:
+        optargs = [repr(a) for a in self.args]
+        kws = f"begin={self.begin!r}, sep={self.sep!r}, end={self.end!r}"
+        return f"DataMessage({", ".join(optargs + [kws])})"
+
+    @classmethod  # NOTE: specialise for subclass call signature
+    def parse(cls, s, begin: int | str, sep: str, end: int | str, **kwargs):
+        """Parse message string and return `cls_args`, `cls_kwargs`"""
+        begin = s[:begin] if isinstance(begin, int) else begin
+        end = s[-end:] if isinstance(end, int) else end
+        str_data = s.rstrip(end).lstrip(begin)
+        cls_kwargs = dict(begin=begin, sep=sep, end=end, **kwargs)
+        cls_args = str_data.split(sep)
+        return cls.convert_args(cls_args), cls_kwargs
+
+    @classmethod  # automatically convert if types provided by subclass
+    def convert_args(cls, *args):
+        types = cls._types
+        if isinstance(types, (tuple, list)) and len(args) == len(types):
+            return tuple(t(arg) for (t, arg) in zip(types, args))
+        else:
+            return args
+
+    @classmethod  # NOTE: no need to specialise
+    def from_str(cls, s: str, *args, **kwargs):
+        """Parse message string and convert to a DataMessage type"""
+        cls_args, cls_kwargs = cls.parse(s, *args, **kwargs)
+        return cls(*cls_args, **cls_kwargs)
+
+    @classmethod
+    def read(cls, serial: Serial, expected=None, *args, **kwargs):
+        """Read serial message and convert to a DataMessage type"""
+        END = kwargs["end"] if "end" in kwargs else cls._END
+        expected = parse_none(expected, END)
+        s = serial.read_until(expected.encode("ascii")).decode()
+        return cls.from_str(s, *args, datetime=cls.now(), **kwargs)
+
+
+class DataResponse(DataMessage):
+    """One or more data parameter values which are delimited by spaces.
+
+    A data response is sent when parameter values must be provided in response
+    to a request message.
+
+    - Data Parameter N: A data value returned by the pump.
+      The format of each data parameter is defined by the request message that
+       a data response message is sent in response to.
+      See each request message definition for the definition associated data
+       response messages.
+    """
+
+    _begin = ""
+    _sep = SP
+    _end = CRLF
+
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs = dict(begin=self.begin, sep=self.sep, end=self.end, **kwargs)
+        return super().__init__(*args, **kwargs)
+
+    def __repr__(self) -> str:
+        optargs = [repr(a) for a in self.args]
+        return f"{type(self).__name__}({", ".join(optargs)})"
+
+    @classmethod  # NOTE: parent method can convert args
+    def parse(cls, s, **kwargs):
+        cls_args, _ = super().parse(s, cls._begin, cls._sep, cls._end)
+        return cls_args, dict(**kwargs)
+
+    @classmethod
+    def read(cls, serial: Serial, **kwargs):
+        return super().read(serial, cls._end, **kwargs)
+
+
+# 1.0 COMMUNICATIONS MANAGEMENT
+class ChannelAddressingResponse(DataResponse):
+    _types = (BooleanType,)
+
+
+class EventMessagingResponse(DataResponse):
+    _types = (BooleanType,)
+
+
+class SerialVersionResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+# 2.0 PUMP DRIVE
+class DirectionResponse(DataResponse):
+    _types = (DirectionType,)
+
+
+class PumpErrorResponse(DataResponse):
+    _types = (CharType, CharType)  # NOTE: CHECK FORMAT MANUALLY
+
+
+# 3.0 OPERATIONAL MODES AND SETTINGS
+class ModeResponse(DataResponse):
+    _types = (CharType,)
+
+
+class RateOtherResponse(DataResponse):
+    _types = (BooleanType,)  # NOTE: double check manually
+
+
+class RPMResponse(DataResponse):
+    _types = (FractionalType,)
+
+
+class FlowrateResponse(DataResponse):
+    _types = (VolumeType1,)
+
+
+class VolumeFixedResponse(DataResponse):
+    _types = (VolumeType1,)
+
+
+class TimeFixedResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+class PauseTimeResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+class CycleCountResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+# class MaxFlowrateResponse(DataResponse):
+#     _types = ()  # NOTE: CHECK FORMAT MANUALLY
+
+
+# class MaxFlowrateCalibratedResponse(DataResponse):
+#     _types = ()  # NOTE: CHECK FORMAT MANUALLY
+
+
+class DispenseTimeByFlowrateResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+class DispenseTimeByRPMResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+# 4.0 CONFIGURATION
+class TubeDiameterResponse(DataResponse):
+    _types = (DiameterType,)
+
+
+class BackstepsResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+# 5.0 CALIBRATION
+class CalDirectionResponse(DataResponse):
+    _types = (DirectionType,)
+
+
+class CalTargetVolumeResponse(DataResponse):
+    _types = (VolumeType1,)
+
+
+class CalActualVolumeResponse(DataResponse):
+    _types = (VolumeType1,)
+
+
+class CalTimeResponse(DataResponse):
+    _types = (TimeType1,)
+
+
+class RuntimeSinceCalResponse(DataResponse):
+    _types = (TimeType2,)
+
+
+# 6.0 SYSTEM
+class FirmwareVersionResponse(DataResponse):
+    _types = (DiscreteType2,)
+
+
+class PumpSerialNoResponse(DataResponse):
+    _types = (StringType,)
+
+
+class PumpLanguageResponse(DataResponse):
+    _types = (LanguageType,)
+
+
+class NumberOfChannelsResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+class NumberOfRollersResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+class RevsSinceResetResponse(DataResponse):
+    _types = (DiscreteType4,)
+
+
+class VolumeSinceResetResponse(DataResponse):
+    # NOTE: distinguish from GetTotalVolumeSinceReset?
+    _types = (DiscreteType4,)
+
+
+class TimePumpedSinceResetResponse(DataResponse):
+    _types = (DiscreteType4,)
+
+
+class ModelInfoResponse(DataResponse):
+    _types = (StringType, DiscreteType1, DiscreteType1)
+
+
+class PumpHeadModelResponse(DataResponse):
+    _types = (DiscreteType1,)
+
+
+class PumpTime10thsResponse(DataResponse):
+    # NOTE: distinguish from GetTimeFixed?
+    _types = (DiscreteType1,)
+
+
+class LowOrderStepsResponse(DataResponse):
+    _types = (DiscreteType3,)
+
+
+class HighOrderStepsResponse(DataResponse):
+    _types = (DiscreteType3,)
+
+
+class RollerVolumeResponse(DataResponse):
+    _types = (VolumeType1,)  # NOTE: in nl units?
+
+
+class PauseTime10thsResponse(DataResponse):
+    # NOTE: distinguish from GetPauseTime?
+    _types = (DiscreteType1,)
+
+
+# class TotalVolumeSinceResetResponse(DataResponse):
+#     # NOTE: distinguish from GetVolumeSinceReset?
+#     _types = ()  # NOTE: CHECK FORMAT MANUALLY
+
+
+class EventMessage(DataMessage):
+    _prefix = EVT_ID
+    _code = EVT_CHANNEL_UPDATE
+    _begin = 2
+    _sep = VB
+    _end = CRLF
+    _expected = _end
+
+    def __init__(self, *args, code=None) -> None:
+        cls = type(self)
+        self._code = parse_none(code, cls._code)
+        kwargs = dict(begin=self.begin, sep=cls._sep, end=cls._end)
+        super().__init__(*args, **kwargs)
+        del self._begin
+
+    @property
+    def begin(self):
+        return self._prefix + self._code
+
+    @property
+    def code(self):
+        return self._code
+
+    def __repr__(self) -> str:
+        kws = [f"code={self.code!r}"]
+        optargs = [repr(a) for a in self.args]
+        return f"EventMessage({", ".join(optargs + kws)})"
+
+    @classmethod
+    def parse(cls, s):  # NOTE: parent method can convert args
+        cls_args, cls_kwargs = super().parse(
+            s, begin=cls._begin, sep=cls._sep, end=cls._end
+        )
+        code = cls_kwargs["begin"][-1]
+        return cls_args, dict(code=code)
+
+    @classmethod
+    def read(cls, serial: Serial):
+        return super().read(serial, cls._expected)
+
+
+class StoppingEvent(EventMessage):
+    _code = EVT_CHANNEL_STOP
+
+
+class UpdateEvent(EventMessage):
+    _code = EVT_CHANNEL_UPDATE
+
+
+class RequestMessage(RegloMessage):
+    _RTYPES = (StatusResponse, DataResponse)
+
+    def __init__(
+        self,
+        addr: int | uint = 0,
+        end=CRLF,
+        response: None | StatusResponse | DataResponse = None,
+        rtype: None | type[StatusResponse] | type[DataResponse] = None,
+    ) -> None:
+        assert 0 <= addr <= 8, f"Address must be in range 0–8; got {addr}"
+        self._addr = uint(addr)
+        self._end = end
+        self._response = response
+        self._rtype = rtype
+        pass
+
+    def __call__(self, serial: Serial):
+        return self.write(serial)
+
+    def __len__(self):
+        return len(str(self))
+
+    def __repr__(self) -> str:
+        return f"RequestMessage({int(self.addr)}, end={self.end!r})"
+
+    def __str__(self):
+        return self.end
+
+    @property
+    def addr(self):
+        return self._addr
+
+    @property
+    def end(self):
+        return self._end
+
+    @property
+    def response(self):
+        return self._response
+
+    @response.setter
+    def response(self, value):
+        if isinstance(value, self._RTYPES):
+            value = value
+        elif self.rtype is type(None):
+            value = None
+        elif isinstance(value, str) and issubclass(self.rcls, self._RTYPES):
+            value = self.rcls.from_str(value)
+        elif isinstance(value, Serial) and issubclass(self.rcls, self._RTYPES):
+            value = self.rcls.read(value)
+        else:
+            raise ValueError(
+                "response must be str, StatusResponse or DataResponse"
+            )
+
+        self._response = value
+        return self.response
+
+    @property
+    def rtype(self):
+        return parse_none(self._rtype, type(self._response))
+
+    @property
+    def rcls(self):
+        return self.rtype
+
+    @property
+    def encoded(self):
+        return self.encode()
+
+    def encode(self):
+        return str(self).encode()
+
+    def write(self, serial: Serial):
+        bytes_written = serial.write(self.encoded)
+        if bytes_written != len(self.encoded):
+            raise RuntimeError("Command was not fully written")
+        self.log_datetime()
+        serial.flush()  # wait to finish transmission
+
+        self.response = serial
+        return self.response
+
+
+class SetPumpAddress(RequestMessage):
+    _end = CR
+    _rtype = StatusResponse
+
+    def __init__(self, addr: int | uint = 1) -> None:
+        assert 1 <= addr <= 8, f"Pump address must be in range 1–8; got {addr}"
+        cls = type(self)
+        return super().__init__(
+            addr, end=cls._end, response=None, rtype=cls._rtype
+        )
+
+    def __repr__(self) -> str:
+        return f"PumpAddressCommand({int(self.addr)})"
+
+    def __str__(self) -> str:
+        return f"{AT}{self.addr}{self.end}"
+
+
+class DeviceCommand(RequestMessage):
+    _code = GET_MODEL_INFO
+    _end = CRLF
+    _rtype = DataResponse
+    BASE_CLASSES = {
+        "DeviceCommand",
+        "ShortDeviceCommand",
+        "GetterCommand",
+        "ShortGetterCommand",
+        "SetterCommand",
+        "ShortSetterCommand",
+        "VerboseSetterCommand",
+    }
+    _types = None
+
+    def __init__(self, addr, *args, code=None, rtype=None) -> None:
+        self._args = self.convert_args(args)
+        self._code = parse_none(code, self._code)
+        rtype = parse_none(rtype, self._rtype)
+        return super().__init__(
+            addr, end=self._end, response=None, rtype=rtype
+        )
+
+    def __repr__(self) -> str:
+        cls = type(self)
+        name = cls.__name__
+        addr = str(int(self.addr))
+        code = repr(self.code)
+        args = [addr, code] if name in cls.BASE_CLASSES else [addr]
+        optargs = [repr(a) for a in self.args]
+        return f"{name}({", ".join(args + optargs)})"
+
+    def __str__(self) -> str:
+        params = VB.join(str(a) for a in self.args)
+        # [CRLF] required for termination
+        return f"{self.addr}{self.code}{params}{self.end}"
+
+    @property
+    def args(self):
+        return self._args
+
+    @property
+    def code(self):
+        return self._code
+
+    @property
+    def types(self):
+        return parse_none(self._types, tuple(type(a) for a in self._args))
+
+    @classmethod  # automatically convert if types provided by subclass
+    def convert_args(cls, *args):
+        types = cls._types
+        if isinstance(types, (tuple, list)) and len(args) == len(types):
+            return tuple(t(arg) for (t, arg) in zip(types, args))
+        else:
+            return args
+
+
+class ShortDeviceCommand(DeviceCommand):
+    def __init__(self, addr=0, code=None, rtype=None) -> None:
+        super().__init__(addr, code=code, rtype=rtype)
+
+
+# GETTERS AND SETTERS
+class GetterCommand(DeviceCommand):
+    """A command that gets device information, returning a DataResponse"""
+
+    _rtype = DataResponse
+
+
+class ShortGetterCommand(ShortDeviceCommand):
+    """A getter with no arguments, returning a DataResponse"""
+
+    _rtype = DataResponse
+
+
+class StatusGetterCommand(ShortDeviceCommand):
+    """A getter with no arguments, returning a StatusResponse"""
+
+    _rtype = StatusResponse
+
+
+class SetterCommand(DeviceCommand):
+    """A command that alters device settings, returning a StatusResponse"""
+
+    _rtype = StatusResponse
+
+
+class ShortSetterCommand(ShortDeviceCommand):
+    """A setter with no arguments, returning a StatusResponse"""
+
+    _rtype = StatusResponse
+
+
+class VerboseSetterCommand(DeviceCommand):
+    """A setter with arguments, returning a DataResponse"""
+
+    _rtype = DataResponse
+
+
+# 1.0 COMMUNICATIONS MANAGEMENT
+class GetChannelAddressing(ShortGetterCommand):  # 1.1
+    """Get an integer representing whether (1) or not (0) channel addressing is enabled."""
+
+    _rtype = ChannelAddressingResponse
+    _code = GET_CHN_ADR
+
+
+class SetChannelAddressing(SetterCommand):  # 1.2
+    """Set whether channel messaging is enabled (1) or not enabled (0)."""
+
+    _types = (BooleanType,)
+    _code = SET_CHN_ADR
+
+
+class GetEventMessaging(ShortGetterCommand):  # 1.3
+    """Get an integer representing whether (1) or not (0) event messages are enabled."""
+
+    _rtype = EventMessagingResponse
+    _code = GET_EVT_MSG
+
+
+class SetEventMessaging(SetterCommand):  # 1.4
+    """Set whether event messages are enabled (1) or not enabled (0)."""
+
+    _types = (BooleanType,)
+    _code = GET_EVT_MSG
+
+
+class GetSerialVersion(ShortGetterCommand):  # 1.5
+    """Get an integer representing the version of the serial protocol."""
+
+    _rtype = SerialVersionResponse
+    _code = GET_SERIAL_VER
+
+
+# 2.0 PUMP DRIVE
+class StartPump(ShortSetterCommand):  # 2.1
+    """Start pump."""
+
+    _code = SET_START
+
+
+class StopPump(ShortSetterCommand):  # 2.2
+    """Stop pumping."""
+
+    _code = SET_STOP
+
+
+class PausePump(ShortSetterCommand):  # 2.3
+    """Pause pumping (STOP in RPM or flow rate mode)."""
+
+    _code = SET_PAUSE
+
+
+class GetDirection(ShortGetterCommand):  # 2.4
+    """Get pump direction."""
+
+    _rtype = DirectionResponse
+    _code = GET_DIR
+
+
+class SetClockwise(ShortSetterCommand):  # 2.5
+    """Set rotation direction to clockwise."""
+
+    _code = SET_CW
+
+
+class SetCounterClockwise(ShortSetterCommand):  # 2.6
+    """Set rotation direction to counter-clockwise."""
+
+    _code = SET_CCW
+
+
+class GetPumpError(ShortGetterCommand):  # 2.7
+    """Cause of `–` cannot run response = Parameter #1, Limiting value that was exceeded = Parameter #2."""
+
+    _rtype = PumpErrorResponse
+    _code = GET_DRIVE_ERR
+
+
+# 3.0 OPERATIONAL MODES AND SETTINGS
+class GetMode(ShortGetterCommand):  # 3.1
+    """Get the current channel or pump mode."""
+
+    _rtype = ModeResponse
+    _code = GET_MODE
+
+
+class SetModeRPM(ShortSetterCommand):  # 3.2
+    """Set pump/channel to RPM mode."""
+
+    _code = SET_MODE_RPM
+
+
+class SetModeFlowrate(ShortSetterCommand):  # 3.3
+    """Set pump/channel to Flow Rate mode."""
+
+    _code = SET_MODE_FLOWRATE
+
+
+class SetModeVolumeRateFixed(ShortSetterCommand):  # 3.4
+    """Set pump/channel to Volume (at rate) mode."""
+
+    _code = SET_MODE_VOL_RATE
+
+
+class SetModeVolumeTimeFixed(ShortSetterCommand):  # 3.5
+    """Set pump/channel to Volume (over time) mode."""
+
+    _code = SET_MODE_VOL_TIME
+
+
+class SetModeVolumeRateCycled(ShortSetterCommand):  # 3.6
+    """Set pump/channel to Volume + Pause mode."""
+
+    _code = SET_MODE_VOL_PAUSE
+
+
+class SetModeTimeRateFixed(ShortSetterCommand):  # 3.7
+    """Set pump/channel to Time mode."""
+
+    _code = SET_MODE_TIME
+
+
+class SetModeTimeRateCycled(ShortSetterCommand):  # 3.8
+    """Set pump/channel to Time + Pause mode."""
+
+    _code = SET_MODE_RPM
+
+
+class GetRateOther(GetterCommand):  # 3.9
+    """Get flow rate from RPM (S) or flow rate (f) when mode is not RPM or flow rate."""
+
+    _types = (BooleanType,)
+    _rtype = RateOtherResponse
+    _code = GET_RATE_OTHER
+
+
+class SetRateOther(SetterCommand):  # 3.10
+    """Set RPM flow rate not in RPM or flow rate mode Discrete Type 3."""
+
+    _types = (DiscreteType3,)
+    _code = SET_RATE_OTHER
+
+
+class GetRPM(ShortGetterCommand):  # 3.11
+    """Gets the current speed setting in RPM."""
+
+    _rtype = RPMResponse
+    _code = GET_RPM
+
+
+class SetRPM(SetterCommand):  # 3.12
+    """RPM mode flow rate setting (0.01 RPM) Discrete Type 3."""
+
+    _types = (DiscreteType3,)
+    _code = SET_RPM
+
+
+class GetFlowrate(ShortGetterCommand):  # 3.13
+    """Get current volume/time flow rate (mL/min)."""
+
+    _rtype = FlowrateResponse
+    _code = GET_FLOWRATE
+
+
+class SetFlowrate(VerboseSetterCommand):  # 3.14
+    """Set RPM flow rate in volume/time mode (mL/min) Volume Type 2."""
+
+    _types = (VolumeType2,)
+    _rtype = FlowrateResponse
+    _code = SET_FLOWRATE
+
+
+class GetVolumeFixed(ShortGetterCommand):  # 3.15
+    """Get the current setting for volume in mL."""
+
+    _code = VolumeFixedResponse
+    _code = GET_VOL
+
+
+class SetVolumeFixed(VerboseSetterCommand):  # 3.16
+    """Set the current setting for volume in mL. Volume Type 2."""
+
+    _types = (VolumeType2,)
+    _rtype = VolumeFixedResponse
+    _code = SET_VOL
+
+
+class GetTimeFixed(ShortGetterCommand):  # 3.17
+    """Get the current pump run time."""
+
+    _rtype = TimeFixedResponse
+    _code = GET_RUN_TIME
+
+
+class SetTimeFixed(SetterCommand):  # 3.18
+    """Set current pump run time using Time Type 2."""
+
+    _types = (TimeType2,)
+    _code = SET_RUN_TIME
+
+
+class GetPauseTime(ShortGetterCommand):  # 3.19
+    """Get pumping pause time."""
+
+    _rtype = PauseTimeResponse
+    _code = GET_PAUSE_TIME
+
+
+class SetPauseTime(SetterCommand):  # 3.20
+    """Set pumping pause time using Time Type 2."""
+
+    _types = (TimeType2,)
+    _code = SET_PAUSE_TIME
+
+
+class GetCycleCount(ShortGetterCommand):  # 3.21
+    """Get pump cycle count."""
+
+    _rtype = CycleCountResponse
+    _code = GET_CYCLE_COUNT
+
+
+class SetCycleCount(SetterCommand):  # 3.22
+    """Set pump cycle count Discrete Type 2."""
+
+    _types = (DiscreteType2,)
+    _code = SET_CYCLE_COUNT
+
+
+class GetMaxFlowrate(ShortGetterCommand):  # 3.23
+    """Max flow rate achievable with current settings mL/min."""
+
+    # _rtype = MaxFlowRateResponse
+    _code = GET_MAX_FLOWRATE
+
+
+class GetMaxFlowrateCalibrated(ShortGetterCommand):  # 3.24
+    """Max flow rate achievable with current settings using calibration."""
+
+    # _rtype = MaxFlowRateCalibratedResponse
+    _code = GET_MAX_FLOWRATE_CALIBRATED
+
+
+class GetDispenseTimeByFlowrate(GetterCommand):  # 3.25
+    """Get time to dispense at a given volume at a given mL/min flow rate.
+
+    Vol, Volume Type 2; flow rate, Volume Type 2.
+    """
+
+    _types = (VolumeType2, VolumeType2)
+    _rtype = DispenseTimeByFlowrateResponse
+    _code = GET_DISPENSE_TIME_FLOWRATE
+
+
+class GetDispenseTimeByRPM(GetterCommand):  # 3.26
+    """Get time to dispense at a given volume at a given RPM.
+
+    mL, Volume Type 2; flow rate, Discrete Type 3.
+    """
+
+    _types = (VolumeType2, DiscreteType3)
+    _rtype = DispenseTimeByRPMResponse
+    _code = GET_DISPENSE_TIME_RPM
+
+
+# 4.0 CONFIGURATION
+class GetTubeDiameter(ShortGetterCommand):  # 4.1
+    """Get the current tubing inside diameter in mm. 2 decimal places are returned."""
+
+    _rtype = TubeDiameterResponse
+    _code = GET_DIAMETER
+
+
+class SetTubeDiameter(SetterCommand):  # 4.2
+    """Set tubing inside diameter using Discrete Type 2."""
+
+    _types = (DiscreteType2,)
+    _code = SET_DIAMETER
+
+
+class GetBacksteps(ShortGetterCommand):  # 4.3
+    """Get the current backsteps setting."""
+
+    _rtype = BackstepsResponse
+    _code = GET_BACKSTEP
+
+
+class SetBacksteps(SetterCommand):  # 4.4
+    """Set the current backsteps setting using Discrete Type 2."""
+
+    _types = (DiscreteType2,)
+    _code = SET_BACKSTEP
+
+
+class ResetConfigData(ShortSetterCommand):  # 4.5
+    """Resets all user configurable data to default values."""
+
+    _code = RESET_CONFIG_DATA
+
+
+# 5.0 CALIBRATION
+class GetCalDirection(ShortGetterCommand):  # 5.1
+    """Get direction flow for calibration."""
+
+    _rtype = CalDirectionResponse
+    _code = GET_CAL_DIR
+
+
+class SetCalDirection(SetterCommand):  # 5.2
+    """Set direction flow for calibration J or K using DIRECTION format."""
+
+    _types = (DirectionType,)
+    _code = SET_CAL_DIR
+
+
+class GetCalTargetVolume(ShortGetterCommand):  # 5.3
+    """Get the target volume to pump for calibrating, mL."""
+
+    _rtype = CalTargetVolumeResponse
+    _code = GET_TARGET_VOL
+
+
+class SetCalTargetVolume(VerboseSetterCommand):  # 5.4
+    """Set the target volume to pump for calibrating using Volume Type 2."""
+
+    _types = (VolumeType2,)
+    _rtype = CalTargetVolumeResponse
+    _code = SET_TARGET_VOL
+
+
+class SetCalActualVolume(VerboseSetterCommand):  # 5.5
+    """Set actual volume measured during calibration, mL Volume Type 2."""
+
+    _types = (VolumeType2,)
+    _rtype = CalActualVolumeResponse
+    _code = SET_ACTUAL_VOL
+
+
+class GetCalTime(ShortGetterCommand):  # 5.6
+    """Get the current calibration time."""
+
+    _rtype = CalTimeResponse
+    _code = GET_CAL_TIME
+
+
+class SetCalTime(SetterCommand):  # 5.7
+    """Set the current calibration time using Time Type 2."""
+
+    _types = (TimeType2,)
+    _code = SET_CAL_TIME
+
+
+class GetRuntimeSinceCal(ShortGetterCommand):  # 5.8
+    """Get the channel run time since last calibration."""
+
+    _rtype = RuntimeSinceCalResponse
+    _code = GET_RUNTIME_SINCE
+
+
+class StartCalibration(ShortSetterCommand):  # 5.9
+    """Start calibration on a channel(s)."""
+
+    _code = SET_CAL_START
+
+
+class CancelCalibration(ShortSetterCommand):  # 5.10
+    """Cancel calibration."""
+
+    _code = SET_CAL_CANCEL
+
+
+# 6.0 SYSTEM
+class GetFirmwareVersion(ShortGetterCommand):  # 6.1
+    """Returns the pump firmware version."""
+
+    _rtype = FirmwareVersionResponse
+    _code = GET_FIRMWARE
+
+
+class SetFactoryRollerVolume(SetterCommand):  # 6.2
+    """Change factory roller step volume for a particular roller count and tubing size.
+
+    - roller count (6, 8, 12), Discrete Type 1
+    - index of the tubing diameter (see Table 1), Discrete Type 1
+    - RSV, Volume Type 2.
+    """
+
+    _types = (DiscreteType1, DiscreteType1, VolumeType2)
+    # NOTE: distinguish from SetRollerVolume?
+    _code = SET_FACTORY_ROLLVOL
+
+
+class SaveSetRollerVolume(ShortSetterCommand):  # 6.3
+    """Save set roller step settings."""
+
+    # NOTE: distinguish from SetRollerVolume?
+    _code = SAVE_SET_ROLLVOL
+
+
+class ResetRollerVolume(ShortSetterCommand):  # 6.4
+    """Reset roller step volume table to defaults."""
+
+    _code = RESET_ROLLVOL
+
+
+class SetPumpDisplayName(SetterCommand):  # 6.5
+    """Set pump name for display under remote control–String."""
+
+    _types = (StringType,)
+    _code = SET_PUMP_NAME
+
+
+class GetPumpSerialNo(ShortGetterCommand):  # 6.6
+    """Get pump serial number."""
+
+    _rtype = PumpSerialNoResponse
+    _code = GET_SERIALNO
+
+
+class SetPumpSerialNo(SetterCommand):  # 6.7
+    """Set pump serial number–String."""
+
+    _types = (StringType,)
+    _code = SET_SERIALNO
+
+
+class GetPumpLanguage(ShortGetterCommand):  # 6.8
+    """Get the current pump language."""
+
+    _rtype = PumpLanguageResponse
+    _code = GET_LANG
+
+
+class SetPumpLanguage(SetterCommand):  # 6.9
+    """Set current pump language–Language."""
+
+    _types = (LanguageType,)
+    _code = SET_LANG
+
+
+class GetNumberOfChannels(ShortGetterCommand):  # 6.10
+    """Get number of pump channels."""
+
+    _rtype = NumberOfChannelsResponse
+    _code = GET_CHANNELNO
+
+
+class SetNumberOfChannels(SetterCommand):  # 6.11
+    """Configure number of pump channels. Discrete Type 2."""
+
+    _types = (DiscreteType2,)
+    _code = SET_CHANNELNO
+
+
+class GetNumberOfRollers(ShortGetterCommand):  # 6.12
+    """Get number of rollers for channel."""
+
+    _rtype = NumberOfRollersResponse
+    _code = GET_ROLLERNO
+
+
+class SetNumberOfRollers(SetterCommand):  # 6.13
+    """Set number of rollers for channel. Discrete Type 2."""
+
+    _types = (DiscreteType2,)
+    _code = SET_ROLLERNO
+
+
+class GetRevsSinceReset(ShortGetterCommand):  # 6.14
+    """Get total number of revolutions since last reset."""
+
+    _rtype = RevsSinceResetResponse
+    _code = GET_REV_SINCE_RESET
+
+
+class GetVolumeSinceReset(ShortGetterCommand):  # 6.15
+    """Get channel total volume pumped since last reset, mL."""
+
+    # NOTE: distinguish from GetTotalVolumeSinceReset?
+    _rtype = VolumeSinceResetResponse
+    _code = GET_VOL_SINCE_RESET
+
+
+class GetTimePumpedSinceReset(ShortGetterCommand):  # 6.16
+    """Get total time pumped for a channel since last reset."""
+
+    _rtype = TimePumpedSinceResetResponse
+    _code = GET_TIME_SINCE_RESET
+
+
+class EnableGUI(ShortSetterCommand):  # 6.17
+    """Set control from the pump user interface."""
+
+    _code = SET_GUI_ON
+
+
+class DiableGIU(ShortSetterCommand):  # 6.18
+    """Disable pump user interface."""
+
+    _code = SET_GUI_OFF
+
+
+class SetDisplayNumbers(SetterCommand):  # 6.19
+    """Write numbers to the pump to display while under external control.
+
+    - String (<17 characters).
+    """
+
+    _types = (StringType,)
+    _code = SET_DISPLAY_NUM
+
+
+class SetDisplayCharacters(SetterCommand):  # 6.20
+    """Write numbers to the pump to display while under external control.
+
+    - String (<17 characters).
+    """
+
+    _types = (StringType,)
+    _code = SET_DISPLAY_CHR
+
+
+class GetRunStatus(StatusGetterCommand):  # 6.21
+    """Returns whether the pump is currently running or not."""
+
+    _code = GET_RUN_STATUS
+
+
+class GetModelInfo(ShortGetterCommand):  # 6.22
+    """Returns pump model information.
+
+    Returns the following fields, each separated by a space:
+    - Pump model description:
+     A text field describing the model of pump.
+     This description may contain spaces.
+    - Pump software version:
+     The version of software currently running in the pump.
+    - Pump head model type code:
+     A code describing the type of pump head installed.
+     The first digit represents the number of channels for the pump, and the second 2 digits represent the number of rollers.
+     XX if channels do not have the same number of rollers.
+    """
+
+    _rtype = ModelInfoResponse
+    _code = GET_MODEL_INFO
+
+
+class GetPumpHeadModel(ShortGetterCommand):  # 6.23
+    """Returns the pump head model type code
+
+    - A 4 digit code indicating the ID number of the pump head.
+    The first two digits represent the number of channels on the head,
+    and the second 2 digits represent the number of rollers.
+    """
+
+    _rtype = PumpHeadModelResponse
+    _code = GET_HEAD_CODE
+
+
+class SetPumpHeadModel(SetterCommand):  # 6.24
+    """Sets the pump head model type code
+
+    – An up-to 4 digit code setting the ID number of the pump head.
+     The first two digits encode the number of channels on the head,
+     the second two digits encode the number of rollers on the head.
+
+    This command sets all roller counts to the same value.
+    To individually set roller counts for each channel,
+    use the non-legacy command designed for this operation.
+
+    Discrete Type 2.
+    """
+
+    _types = (DiscreteType2,)
+    _code = SET_HEAD_CODE
+
+
+class GetPumpTime10ths(ShortGetterCommand):  # 6.25
+    """Get the current setting for pump time in 1/10 second."""
+
+    # NOTE: distinguish from GetTimeFixed?
+    _rtype = PumpTime10thsResponse
+    _code = GET_TIME_10THS
+
+
+class SetPumpTime10ths(SetterCommand):  # 6.26
+    """Set the current setting for pump time in 1/10 second. Discrete Type 2."""
+
+    # NOTE: distinguish from SetTimeFixed?
+    _types = (DiscreteType2,)
+    _code = SET_TIME_10THS
+
+
+class SetDispenseTimeMins(SetterCommand):  # 6.27
+    """Set the current run time setting for dispensing in minutes. Discrete Type 5."""
+
+    # NOTE: distinguish from SetTimeFixed?
+    _types = (DiscreteType5,)
+    _code = SET_TIME_MINS
+
+
+class SetDispenseTimeHrs(SetterCommand):  # 6.28
+    """Set the current run time setting for dispensing in hours. Discrete Type 5."""
+
+    # NOTE: distinguish from SetTimeFixed?
+    _types = (DiscreteType5,)
+    _code = SET_TIME_HRS
+
+
+class GetLowOrderSteps(ShortGetterCommand):  # 6.29
+    """Get the low order roller steps. The total number of roller steps which
+    are dispensed during an operation is computed as:[(u*65536]+(U)]."""
+
+    _rtype = LowOrderStepsResponse
+    _code = GET_ROLLSTEP_LO
+
+
+class SetLowOrderSteps(SetterCommand):  # 6.30
+    """Set the high order roller steps. Discrete Type 6."""
+
+    _types = (DiscreteType6,)
+    _code = SET_ROLLSTEP_LO
+
+
+class GetHighOrderSteps(ShortGetterCommand):  # 6.31
+    """Get the high order roller steps. The total number of roller steps which
+    are dispensed during an operation is computed as:[(u*65536]+(U)]."""
+
+    _rtype = HighOrderStepsResponse
+    _code = GET_ROLLSTEP_HI
+
+
+class SetHighOrderSteps(SetterCommand):  # 6.32
+    """Set the high order roller steps. Discrete Type 6."""
+
+    _types = (DiscreteType6,)
+    _code = SET_ROLLSTEP_HI
+
+
+class GetRollerVolume(ShortGetterCommand):  # 6.33
+    """Get the current roller step volume
+
+    Based on the current calibration, tubing diameter and roller count.
+    If no calibration has been performed the default volume is returned.
+    """
+
+    _rtype = RollerVolumeResponse
+    _code = GET_ROLLVOL_CAL
+
+
+class SetRollerVolume(SetterCommand):  # 6.34
+    """Set the calibrated roller step volume to use for this pump or channel.
+
+    This value is used as the calibrated value and is overwritten by
+    subsequent calibrations and reset by changing tubing diameter.
+    Volume Type 2.
+    """
+
+    # NOTE: distinguish from SetFactoryRollerVolume
+    _types = (VolumeType2,)
+    _code = SET_ROLLVOL_CAL
+
+
+class ResetCalibrationData(ShortSetterCommand):  # 6.35
+    """Reset the pump to discard calibration data, use default roller step volume."""
+
+    # NOTE: distinguish from ResetConfigData
+    _code = RESET_CAL
+
+
+class GetPauseTime10ths(ShortGetterCommand):  # 6.36
+    """Get the current setting for pause time in 1/10 second."""
+
+    # NOTE: distinguish from GetPauseTime?
+    _rtype = PauseTime10thsResponse
+    _code = GET_PAUSE_10THS
+
+
+class SetPauseTime10ths(SetterCommand):  # 6.37
+    """Set the current setting for pause time in 1/10 second. Discrete Type 2."""
+
+    # NOTE: distinguish from SetPauseTime?
+    _types = (DiscreteType2,)
+    _code = SET_PAUSE_10THS
+
+
+class SetPauseTimeMins(SetterCommand):  # 6.38
+    """Set the current setting for pause time in minutes. Discrete Type 5."""
+
+    # NOTE: distinguish from SetPauseTime?
+    _types = (DiscreteType5,)
+    _code = SET_PAUSE_MINS
+
+
+class SetPauseTimeHrs(SetterCommand):  # 6.39
+    """Set the current setting for pause time in hours. Discrete Type 5."""
+
+    # NOTE: distinguish from SetPauseTime?
+    _types = (DiscreteType5,)
+    _code = SET_PAUSE_HRS
+
+
+class GetTotalVolumeSinceReset(GetterCommand):  # 6.40
+    """Get the total volume dispensed since the last reset in µL, mL or liters."""
+
+    # NOTE: distinguish from GetVolumeSinceReset?
+    # _types = ()
+    # _rtype = TotalVolumeSinceResetResponse
+    _code = GET_VOLALL_SINCE_RESET
+
+
+class SavePumpSettings(ShortSetterCommand):  # 6.41
+    """Saves the current pump settings values to memory."""
+
+    _code = SAVE_SET_ALL
+
+
+class GetFootSwitchStatus(StatusGetterCommand):  # 6.42
+    """Get the current state of the foot switch."""
+
+    _code = GET_FOOTSWITCH_STATUS
