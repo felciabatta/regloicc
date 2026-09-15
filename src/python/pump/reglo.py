@@ -38,12 +38,11 @@ References
 
 import time
 
-from numpy import sign
 from pandas import DataFrame
 from pandas import concat as pdcat
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
 
-from ..utils import get_port, parse_none
+from ..utils import flux2mmmmse, get_port, parse_none
 from .constants import (
     AT,
     CARET,
@@ -1010,34 +1009,3 @@ class RegloICC:
         """Get the operational mode of a single channel."""
         # 'xM' to get the operational mode
         return self.fwrite_receive(channel, "xM")
-
-
-def flux2mmmmse(flowrate, from_unit="mL/min"):
-    """Convert flowrate (flux) from vol/time to mmmmse format.
-
-    :param flowrate:
-    :param from_unit:
-
-    :rtype: tuple[int, str, int]
-    :returns:
-        Flow rate tuple `(mmmm, "-", exponent)`.
-    """
-    v_unit, t_unit = from_unit.split("/", 1)
-    time_factors = {"s": 1 / 60, "min": 1, "hr": 60, "hour": 60}
-    vol_factors = {"uL": 1e-3, "µL": 1e-3, "mL": 1}
-    if t_unit not in time_factors:
-        raise ValueError("Invalid time unit. Use 's', min' or 'hr'.")
-    if v_unit not in vol_factors:
-        raise ValueError("Invalid volume unit. Use 'uL' or 'mL'.")
-    flow_mL_min = flowrate * vol_factors[v_unit] / time_factors[t_unit]
-
-    s = sign(flow_mL_min - 1)
-    e = 0
-    flow_scaled = flow_mL_min * 10 ** (-s * e)
-    while not (1 <= flow_scaled < 10) and flow_mL_min != 0:
-        e += 1
-        flow_scaled = flow_mL_min * 10 ** (-s * e)
-    flow_scaled *= 1000
-    mmmm = int(min(round(flow_scaled), 9999))
-
-    return (mmmm, "-" if s == -1 else "+", e)
