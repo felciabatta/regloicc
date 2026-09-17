@@ -78,6 +78,7 @@ from .constants import (
     EVT_CHANNEL_UPDATE,
     EVT_DESC_KEY,
     EVT_ID,
+    FAILURE,
     FRENCH,
     FS_GROUNDED,
     FS_OPEN,
@@ -197,6 +198,7 @@ from .constants import (
     SET_VOL,
     SP,
     SPANISH,
+    STATUS_CHARS,
     STATUS_DESC_KEY,
     STOPPED_CALI_COMPLETE,
     STOPPED_DESC_KEY,
@@ -209,10 +211,9 @@ from .constants import (
     STR_GERMAN,
     STR_LANG_KEY,
     STR_SPANISH,
-    SUCCESSFULL,
+    SUCCESS,
     TIMETYPE_MAX,
     TUBE_IDS,
-    UNSUCCESSFULL,
     VB,
     VOLTYPE_MAX,
     VOLTYPE_MIN,
@@ -237,6 +238,7 @@ from .messages import (
     EnableGUI,
     EventMessage,
     EventMessagingResponse,
+    FailureResponse,
     FirmwareVersionResponse,
     FlowrateResponse,
     GetBacksteps,
@@ -283,13 +285,17 @@ from .messages import (
     GetVolumeSinceReset,
     HighOrderStepsResponse,
     LowOrderStepsResponse,
+    MiscResponse,
+    MissingResponse,
     ModelInfoResponse,
     ModeResponse,
+    NegativeResponse,
     NumberOfChannelsResponse,
     NumberOfRollersResponse,
     PausePump,
     PauseTime10thsResponse,
     PauseTimeResponse,
+    PositiveResponse,
     PumpErrorResponse,
     PumpHeadModelResponse,
     PumpLanguageResponse,
@@ -359,17 +365,14 @@ from .messages import (
     StartCalibration,
     StartPump,
     StatusGetterCommand,
-    StatusNegative,
-    StatusPositive,
     StatusResponse,
-    StatusSuccessfull,
-    StatusUnknown,
-    StatusUnsuccessfull,
     StoppingEvent,
     StopPump,
+    SuccessResponse,
     TimeFixedResponse,
     TimePumpedSinceResetResponse,
     TubeDiameterResponse,
+    UnknownResponse,
     UpdateEvent,
     VerboseSetterCommand,
     VolumeFixedResponse,
@@ -379,6 +382,8 @@ from .reglotypes import (
     AddressType,
     BooleanType,
     CharType,
+    ClockwiseType,
+    CounterClockwiseType,
     DiameterType,
     DirectionType,
     DiscreteType,
@@ -388,13 +393,21 @@ from .reglotypes import (
     DiscreteType4,
     DiscreteType5,
     DiscreteType6,
+    FailureType,
     FractionalType,
     LanguageType,
+    MiscType,
+    MissingType,
+    NegativeType,
+    PositiveType,
     RegloDataType,
+    StatusType,
     StringType,
+    SuccessType,
     TimeType,
     TimeType1,
     TimeType2,
+    UnknownType,
     VolumeType1,
     VolumeType2,
 )
@@ -408,6 +421,10 @@ class RegloChannel:
         addr: int = 1,
         serial: None | str | Serial = _serial,
         tube_id=None | float,
+        verbose=True,
+        tube_diameter=0.51,
+        display_message="we be pumpin'",
+        mode=MODE_FLOWRATE,
     ) -> None:
         # Open serial port with data format corresponding to the RegloICC pump
         self.addr = addr
@@ -415,12 +432,13 @@ class RegloChannel:
         self._log = DataFrame(
             columns=[
                 "datetime",
+                "request_desc",
+                "response_desc",
                 "request",
                 "response",
-                "request_string",
-                "response_string",
             ]
         )
+        self.verbose = verbose
         self._current_request = None
 
         pass
@@ -443,6 +461,7 @@ class RegloChannel:
                 parity=PARITY_NONE,
                 stopbits=STOPBITS_ONE,
                 bytesize=EIGHTBITS,
+                timeout=3,
             )
 
         self._serial = serial
@@ -470,13 +489,15 @@ class RegloChannel:
 
     def update_log(self, request: RequestMessage):
         row_new = dict(
-            datetime=request.datetime,
-            request=request,
-            response=request.response,
-            request_string=str(request),
-            response_string=str(request.response),
+            datetime=[request.datetime],
+            request_desc=[repr(request)],
+            response_desc=[repr(request.response)],
+            request=[request],
+            response=[request.response],
         )
         self._log = pdcat([self._log, DataFrame(row_new)], ignore_index=True)
+        if self.verbose:
+            print(self.log.iloc[-1:])
         return self.log
 
     def send_request(

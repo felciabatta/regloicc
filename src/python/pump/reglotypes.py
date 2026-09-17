@@ -2,6 +2,8 @@
 
 from numpy import clip, format_float_scientific, uint
 
+from src.python.utils import parse_none
+
 from .constants import (
     CCW,
     CW,
@@ -19,10 +21,16 @@ from .constants import (
     DT6_WIDTH,
     DT_ZERO,
     ENGLISH,
+    FAILURE,
     ISO_LANG_KEY,
     LANG_KEY,
+    NEGATIVE,
+    POSITIVE,
     SP,
+    STATUS_CHARS,
+    STATUS_DESC_KEY,
     STR_LANG_KEY,
+    SUCCESS,
     TIMETYPE_MAX,
     VOLTYPE_MAX,
     VOLTYPE_MIN,
@@ -36,13 +44,8 @@ class RegloDataType:
         self.check_width()
         pass
 
-    @property
-    def value(self):
-        return self._value
-
-    @property
-    def width(self):
-        return self._width
+    def __len__(self):
+        return self.width
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._value!r}, width={self._width})"
@@ -50,6 +53,14 @@ class RegloDataType:
     def __str__(self) -> str:
         # print("Executing RegloDataType.__str__()")
         return str(self._value)
+
+    @property
+    def value(self):
+        return self._value
+
+    @property
+    def width(self):
+        return self._width
 
     def check_width(self) -> None:
         len_str = len(str(self))
@@ -80,20 +91,34 @@ class BooleanType(RegloDataType):
 class DirectionType(RegloDataType):
     """A single character indicating direction."""
 
-    def __init__(self, value=+1) -> None:
-        value = value.lower() if isinstance(value, str) else value
+    def __init__(self, value: str | int = CCW) -> None:
+        # value = value.upper() if isinstance(value, str) else value
         super().__init__(DIR_KEY[value], width=uint(1))
 
     def __str__(self) -> str:
         return f"{self._value}"
 
     def __repr__(self) -> str:
-        key = {CCW: "CCW", CW: "CW"}
-        return f"DirectionType({key[self._value]})"
+        cls = type(self)
+        if cls is DirectionType:
+            key = {CCW: "CCW", CW: "CW"}
+            return f"DirectionType({key[self._value]})"
+        else:
+            return f"{cls.__name__}()"
 
     @classmethod
     def from_str(cls, s):
         return cls(s)
+
+
+class CounterClockwiseType(DirectionType):
+    def __init__(self) -> None:
+        super().__init__(CCW)
+
+
+class ClockwiseType(DirectionType):
+    def __init__(self) -> None:
+        super().__init__(CW)
 
 
 class DiscreteType(RegloDataType):
@@ -240,7 +265,7 @@ class FractionalType(RegloDataType):
         return self.val2str(self._value)
 
     def __repr__(self) -> str:
-        return f"FractionalType{self._value}"
+        return f"FractionalType({self._value})"
 
     @classmethod
     def from_str(cls, s):
@@ -265,6 +290,7 @@ class VolumeType1(RegloDataType):
     _width = 7
 
     def __init__(self, value=float()) -> None:
+        # input(repr(value))
         value = 0 if value == 0 else clip(value, VOLTYPE_MIN, VOLTYPE_MAX)
         super().__init__(value, width=type(self)._width)
 
@@ -491,3 +517,112 @@ class DiameterType(RegloDataType):
     def from_str(cls, s: str):
         value, unit = s.split(SP, 1)
         return cls(float(value), unit=unit.strip())
+
+
+class StatusType(CharType):
+    def __init__(self, value, *, desc="") -> None:
+        self._desc = desc
+        assert value in STATUS_CHARS, f"value must be one of {STATUS_CHARS}"
+        return super().__init__(value)
+
+    def __repr__(self) -> str:
+        cls = type(self)
+        if issubclass(cls, StatusType) and cls is not StatusType:
+            return f"{cls.__name__}()"
+        else:
+            return f"StatusType({self.value!r})"
+
+    @property
+    def desc(self):
+        return self._desc
+
+    @classmethod
+    def from_str(cls, s):
+        assert s.isascii(), "Encountered non-ASCII response."
+        if len(s) > 1:
+            print("Warning: Encountered multi-character response.")
+        elif len(s) == 0:
+            print("Warning: Encountered empty response.")
+
+        if s == SUCCESS:
+            return SuccessType()
+        elif s == FAILURE:
+            return FailureType()
+        elif s == NEGATIVE:
+            return NegativeType()
+        elif s == POSITIVE:
+            return PositiveType()
+        else:
+            return MiscType.from_str(s)
+
+
+class StandardStatusType(StatusType):
+    _value = SUCCESS
+
+    def __init__(self) -> None:
+        value = self._value
+        desc = STATUS_DESC_KEY[value]
+        super().__init__(value, desc=desc)
+
+
+class SuccessType(StandardStatusType):
+    _value = SUCCESS
+
+
+class FailureType(StandardStatusType):
+    _value = FAILURE
+
+
+class NegativeType(StandardStatusType):
+    _value = NEGATIVE
+
+
+class PositiveType(StandardStatusType):
+    _value = POSITIVE
+
+
+class MiscType(RegloDataType):
+    def __repr__(self) -> str:
+        return f"MiscType({self.value}, width={self.width})"
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+    @classmethod
+    def from_str(cls, s: str):
+        if s == "":
+            return MissingType.from_str(s)
+        else:
+            return UnknownType.from_str(s)
+
+
+class MissingType(MiscType):
+    def __init__(self) -> None:
+        super().__init__(None, width=0)
+
+    def __repr__(self) -> str:
+        return "MissingType()"
+
+    def __str__(self) -> str:
+        return str()
+
+    @classmethod
+    def from_str(cls, s: str = ""):
+        assert (
+            s == ""
+        ), "Expected empty str '', cannot be converted to MissingType"
+        return MissingType()
+
+
+class UnknownType(MiscType):
+    def __init__(self, value) -> None:
+        # force width ≥ 1
+        width = max(len(str(value)), 1)
+        super().__init__(value, width=width)
+
+    def __repr__(self) -> str:
+        return f"UnknownType({self.value!r})"
+
+    @classmethod
+    def from_str(cls, s: str):
+        return UnknownType(s)

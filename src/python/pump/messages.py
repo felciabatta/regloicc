@@ -11,6 +11,7 @@ from .constants import (
     EVT_CHANNEL_STOP,
     EVT_CHANNEL_UPDATE,
     EVT_ID,
+    FAILURE,
     GET_BACKSTEP,
     GET_CAL_DIR,
     GET_CAL_TIME,
@@ -53,6 +54,7 @@ from .constants import (
     GET_VOL_SINCE_RESET,
     GET_VOLALL_SINCE_RESET,
     NEGATIVE,
+    ONEBYTE,
     POSITIVE,
     RESET_CAL,
     RESET_CONFIG_DATA,
@@ -108,8 +110,7 @@ from .constants import (
     SET_VOL,
     SP,
     STATUS_DESC_KEY,
-    SUCCESSFULL,
-    UNSUCCESSFULL,
+    SUCCESS,
     VB,
 )
 from .reglotypes import (
@@ -123,11 +124,19 @@ from .reglotypes import (
     DiscreteType4,
     DiscreteType5,
     DiscreteType6,
+    FailureType,
     FractionalType,
     LanguageType,
+    MiscType,
+    MissingType,
+    NegativeType,
+    PositiveType,
+    StatusType,
     StringType,
+    SuccessType,
     TimeType1,
     TimeType2,
+    UnknownType,
     VolumeType1,
     VolumeType2,
 )
@@ -138,8 +147,9 @@ class RegloMessage:
 
     _datetime = None
 
-    def __init__(self, *, datetime=_datetime) -> None:
+    def __init__(self, *, datetime=_datetime, **kws) -> None:
         self.datetime = datetime
+        self._unused_kws = kws
         pass
 
     def __repr__(self) -> str:
@@ -167,75 +177,119 @@ class DeviceMessage(RegloMessage):
 
 
 class StatusResponse(DeviceMessage):
-    BYTES = 1
+    _statustype = None
 
-    def __init__(self, status: str, *, desc="", **kwargs) -> None:
-        assert len(status) == 1, "StatusResponse must be a single character."
-        self.status = status
-        self.desc = desc
+    def __init__(self, status, **kwargs) -> None:
+        self._status = status
         return super().__init__(**kwargs)
 
     def __repr__(self) -> str:
-        name = type(self).__name__
-        args = f"{self!r}" if (name == StatusResponse.__name__) else ""
-        return f"{name}({args})"
+        cls = type(self)
+        args = f"{self.status!r}" if (cls is StatusResponse) else ""
+        return f"{cls.__name__}({args})"
 
     def __str__(self) -> str:
-        return self.status
+        return str(self.status)
+
+    @property
+    def status(self):
+        return self._status
+
+    @property
+    def statustype(self):
+        return parse_none(self._statustype, type(self.status))
+
+    @property
+    def desc(self):
+        return getattr(self.status, "desc", "")
 
     @classmethod
     def from_str(cls, s: str, **kwargs):
         assert s.isascii(), "Encountered non-ASCII response."
-        assert len(s) == 1, "Encountered multi-character response."
-        match s:
-            case r if r == SUCCESSFULL:
-                return StatusSuccessfull(**kwargs)
-            case r if r == UNSUCCESSFULL:
-                return StatusUnsuccessfull(**kwargs)
-            case r if r == NEGATIVE:
-                return StatusNegative(**kwargs)
-            case r if r == POSITIVE:
-                return StatusPositive(**kwargs)
-            case _:
-                return StatusUnknown(s, **kwargs)
+        status = StatusType.from_str(s)
+        if isinstance(status, SuccessType):
+            return SuccessResponse(**kwargs)
+        elif isinstance(status, FailureType):
+            return FailureResponse(**kwargs)
+        elif isinstance(status, NegativeType):
+            return NegativeResponse(**kwargs)
+        elif isinstance(status, PositiveType):
+            return PositiveResponse(**kwargs)
+        else:
+            return MiscResponse.from_str(s, **kwargs)
 
     @classmethod
     def read(cls, serial: Serial):
-        s = serial.read(cls.BYTES).decode()
+        s = serial.read(ONEBYTE).decode()
         return cls.from_str(s, datetime=cls.now())
 
 
-class StatusUnknown(StatusResponse):
-    def __init__(self, status: str, **kwargs) -> None:
-        super().__init__(status, desc="Unknown status.", **kwargs)
+class StandardStatusReponse(StatusResponse):
+    _statustype = SuccessType
 
-
-class StatusSuccessfull(StatusResponse):
     def __init__(self, **kwargs) -> None:
-        stat = SUCCESSFULL
-        desc = STATUS_DESC_KEY[stat]
-        return super().__init__(stat, desc=desc, **kwargs)
+        status = self._statustype()
+        return super().__init__(status, **kwargs)
 
 
-class StatusUnsuccessfull(StatusResponse):
+class SuccessResponse(StandardStatusReponse):
+    _statustype = SuccessType
+
+
+class FailureResponse(StandardStatusReponse):
+    _statustype = FailureType
+
+
+class NegativeResponse(StandardStatusReponse):
+    _statustype = NegativeType
+
+
+class PositiveResponse(StandardStatusReponse):
+    _statustype = PositiveType
+
+
+class MiscResponse(DeviceMessage):
+    _misctype = None
+
+    def __init__(self, value, **kwargs) -> None:
+        self._value = value
+        super().__init__(**kwargs)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.value!r})"
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+    @property
+    def value(self):
+        return self._value
+
+    @property
+    def misctype(self):
+        return parse_none(self._misctype, type(self.value))
+
+    @classmethod
+    def from_str(cls, s, **kwargs):
+        misc = MiscType.from_str(s)
+        if isinstance(misc, MissingType):
+            return MissingResponse(**kwargs)
+        elif isinstance(misc, UnknownType):
+            return UnknownResponse(misc, **kwargs)
+
+
+class MissingResponse(MiscResponse):
+    _misctype = MissingType
+
     def __init__(self, **kwargs) -> None:
-        stat = UNSUCCESSFULL
-        desc = STATUS_DESC_KEY[stat]
-        return super().__init__(stat, desc=desc, **kwargs)
+        super().__init__(MissingType(), **kwargs)
+
+    def __repr__(self) -> str:
+        return "MissingResponse()"
 
 
-class StatusNegative(StatusResponse):
-    def __init__(self, desc=None, **kwargs) -> None:
-        stat = NEGATIVE
-        desc = parse_none(desc, STATUS_DESC_KEY[stat])
-        return super().__init__(stat, desc=desc, **kwargs)
-
-
-class StatusPositive(StatusResponse):
-    def __init__(self, desc=None, **kwargs) -> None:
-        stat = POSITIVE
-        desc = parse_none(desc, STATUS_DESC_KEY[stat])
-        return super().__init__(stat, desc=desc, **kwargs)
+class UnknownResponse(MiscResponse):
+    _misctype = UnknownType
 
 
 class DataMessage(DeviceMessage):
@@ -252,6 +306,7 @@ class DataMessage(DeviceMessage):
         self._begin = begin
         self._sep = sep
         self._end = end
+        self.checkargs()
         return super().__init__(**kwargs)
 
     @property
@@ -261,6 +316,14 @@ class DataMessage(DeviceMessage):
     @property
     def types(self):
         return parse_none(self._types, tuple(type(a) for a in self._args))
+
+    @property
+    def ntypes(self):
+        return len(self.types)
+
+    @property
+    def nargs(self):
+        return len(self.args)
 
     @property
     def begin(self):
@@ -286,29 +349,50 @@ class DataMessage(DeviceMessage):
         kws = f"begin={self.begin!r}, sep={self.sep!r}, end={self.end!r}"
         return f"DataMessage({", ".join(optargs + [kws])})"
 
+    def checkargs(self):
+        isok = self.ntypes == self.nargs
+        assert isok, f"Expected {self.ntypes} arguments, got {self.nargs}"
+        return True
+
     @classmethod  # NOTE: specialise for subclass call signature
     def parse(cls, s, begin: int | str, sep: str, end: int | str, **kwargs):
         """Parse message string and return `cls_args`, `cls_kwargs`"""
         begin = s[:begin] if isinstance(begin, int) else begin
         end = s[-end:] if isinstance(end, int) else end
+        assert s.startswith(
+            begin
+        ), f"string does not match format begin = {begin!r}"
+        assert s.endswith(end), f"string does not match format end = {end!r}"
         str_data = s.rstrip(end).lstrip(begin)
         cls_kwargs = dict(begin=begin, sep=sep, end=end, **kwargs)
         cls_args = str_data.split(sep)
-        return cls.convert_args(cls_args), cls_kwargs
+        # input(s)
+        # input(cls_args)
+        # input(cls_kwargs)
+        return cls.convert_args(*cls_args), cls_kwargs
 
     @classmethod  # automatically convert if types provided by subclass
     def convert_args(cls, *args):
         types = cls._types
         if isinstance(types, (tuple, list)) and len(args) == len(types):
-            return tuple(t(arg) for (t, arg) in zip(types, args))
+            # input(args)
+            # input(types)
+            return tuple(t.from_str(arg) for (t, arg) in zip(types, args))
         else:
             return args
 
     @classmethod  # NOTE: no need to specialise
     def from_str(cls, s: str, *args, **kwargs):
         """Parse message string and convert to a DataMessage type"""
-        cls_args, cls_kwargs = cls.parse(s, *args, **kwargs)
-        return cls(*cls_args, **cls_kwargs)
+        # TODO: what if error status response?
+        # TODO: what if unknown response type?
+        # TODO: what if no response — ""?
+        try:
+            cls_args, cls_kwargs = cls.parse(s, *args, **kwargs)
+            return cls(*cls_args, **cls_kwargs)
+        except Exception as e:
+            print(f"Warning, encountered exception: {e!r}")
+            return StatusResponse.from_str(s, **kwargs)
 
     @classmethod
     def read(cls, serial: Serial, expected=None, *args, **kwargs):
@@ -373,7 +457,7 @@ class DirectionResponse(DataResponse):
 
 
 class PumpErrorResponse(DataResponse):
-    _types = (CharType, CharType)  # NOTE: CHECK FORMAT MANUALLY
+    _types = (CharType, VolumeType1)  # NOTE: CHECK FORMAT MANUALLY
 
 
 # 3.0 OPERATIONAL MODES AND SETTINGS
@@ -427,7 +511,7 @@ class DispenseTimeByRPMResponse(DataResponse):
 
 # 4.0 CONFIGURATION
 class TubeDiameterResponse(DataResponse):
-    _types = (DiameterType,)
+    _types = (FractionalType, StringType)
 
 
 class BackstepsResponse(DataResponse):
@@ -692,7 +776,7 @@ class DeviceCommand(RequestMessage):
     _types = None
 
     def __init__(self, addr, *args, code=None, rtype=None) -> None:
-        self._args = self.convert_args(args)
+        self._args = self.convert_args(*args)
         self._code = parse_none(code, self._code)
         rtype = parse_none(rtype, self._rtype)
         return super().__init__(

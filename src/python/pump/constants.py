@@ -12,10 +12,11 @@ AT = "@"
 CARET = "^"
 
 # DATA CHARACTERS
-SUCCESSFULL = "*"
-UNSUCCESSFULL = "#"
-NEGATIVE = "–"
-POSITIVE = "+"
+SUCCESS = "*"  # 0x2a
+FAILURE = "#"  # 0x23
+NEGATIVE = "-"  # 0x2d
+POSITIVE = "+"  # 0x2b
+STATUS_CHARS = {SUCCESS, FAILURE, NEGATIVE, POSITIVE}
 
 CW = "J"
 CCW = "K"
@@ -190,11 +191,12 @@ TUBE_IDS = {
 
 # STATUS RESPONSE
 STATUS_DESC_KEY = {
-    SUCCESSFULL: "The command was executed successfully.",
-    UNSUCCESSFULL: "The command was not executed successfully.",
+    SUCCESS: "The command was executed successfully.",
+    FAILURE: "The command was not executed successfully.",
     NEGATIVE: "Negative. See command definition for context.",
     POSITIVE: "Positive. See command definition for context.",
 }
+ONEBYTE = 1  # for serial
 
 # DISCRETETYPE CONSTANTS
 DT_ZERO = uint()
@@ -227,8 +229,8 @@ DIR_KEY = {
     CW: CW,
     +1: CCW,
     -1: CW,
-    "ccw": CCW,
-    "cw": CW,
+    "CCW": CCW,
+    "CW": CW,
 }
 STR_ENGLISH = "english"
 STR_FRENCH = "french"
