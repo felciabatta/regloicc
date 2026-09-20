@@ -80,8 +80,8 @@ from .constants import (
     EVT_ID,
     FAILURE,
     FRENCH,
-    FS_GROUNDED,
-    FS_OPEN,
+    FOOTSWITCH_GROUNDED,
+    FOOTSWITCH_OPEN,
     GERMAN,
     GET_BACKSTEP,
     GET_CAL_DIR,
@@ -116,7 +116,7 @@ from .constants import (
     GET_RUN_STATUS,
     GET_RUN_TIME,
     GET_RUNTIME_SINCE,
-    GET_SERIAL_VER,
+    GET_PROTOCOL_VER,
     GET_SERIALNO,
     GET_TARGET_VOL,
     GET_TIME_10THS,
@@ -223,7 +223,7 @@ from .messages import (
     CalActualVolumeResponse,
     CalDirectionResponse,
     CalTargetVolumeResponse,
-    CalTimeResponse,
+    CalDurationResponse,
     CancelCalibration,
     ChannelAddressingResponse,
     CycleCountResponse,
@@ -231,7 +231,7 @@ from .messages import (
     DataResponse,
     DeviceCommand,
     DeviceMessage,
-    DiableGIU,
+    DisableGUI,
     DirectionResponse,
     DispenseTimeByFlowrateResponse,
     DispenseTimeByRPMResponse,
@@ -244,7 +244,7 @@ from .messages import (
     GetBacksteps,
     GetCalDirection,
     GetCalTargetVolume,
-    GetCalTime,
+    GetCalDuration,
     GetChannelAddressing,
     GetCycleCount,
     GetDirection,
@@ -262,26 +262,27 @@ from .messages import (
     GetModelInfo,
     GetNumberOfChannels,
     GetNumberOfRollers,
-    GetPauseTime,
-    GetPauseTime10ths,
+    GetCyclePauseTime,
+    GetCyclePauseTimeTenths,
+    GetPumpAddress,
     GetPumpError,
     GetPumpHeadModel,
     GetPumpLanguage,
     GetPumpSerialNo,
-    GetPumpTime10ths,
+    GetDispenseTimeTenths,
     GetRateOther,
     GetRevsSinceReset,
-    GetRollerVolume,
+    GetCalRollerVolume,
     GetRPM,
     GetRunStatus,
     GetRuntimeSinceCal,
-    GetSerialVersion,
+    GetProtocolVersion,
     GetterCommand,
-    GetTimeFixed,
+    GetDispensePeriod,
     GetTimePumpedSinceReset,
     GetTotalVolumeSinceReset,
     GetTubeDiameter,
-    GetVolumeFixed,
+    GetDispenseVolume,
     GetVolumeSinceReset,
     HighOrderStepsResponse,
     LowOrderStepsResponse,
@@ -293,33 +294,33 @@ from .messages import (
     NumberOfChannelsResponse,
     NumberOfRollersResponse,
     PausePump,
-    PauseTime10thsResponse,
-    PauseTimeResponse,
+    CyclePauseTimeTenthsResponse,
+    CyclePauseTimeResponse,
     PositiveResponse,
     PumpErrorResponse,
     PumpHeadModelResponse,
     PumpLanguageResponse,
     PumpSerialNoResponse,
-    PumpTime10thsResponse,
+    DispenseTimeTenthsResponse,
     RateOtherResponse,
     RegloMessage,
     RequestMessage,
     ResetCalibrationData,
     ResetConfigData,
-    ResetRollerVolume,
+    RestoreFactoryRollerVolume,
     RevsSinceResetResponse,
-    RollerVolumeResponse,
+    CalRollerVolumeResponse,
     RPMResponse,
     RuntimeSinceCalResponse,
     SavePumpSettings,
-    SaveSetRollerVolume,
+    SaveRollerStepSetting,
     Serial,
-    SerialVersionResponse,
+    ProtocolVersionResponse,
     SetBacksteps,
     SetCalActualVolume,
     SetCalDirection,
     SetCalTargetVolume,
-    SetCalTime,
+    SetCalDuration,
     SetChannelAddressing,
     SetClockwise,
     SetCounterClockwise,
@@ -335,30 +336,30 @@ from .messages import (
     SetLowOrderSteps,
     SetModeFlowrate,
     SetModeRPM,
-    SetModeTimeRateCycled,
-    SetModeTimeRateFixed,
-    SetModeVolumeRateCycled,
-    SetModeVolumeRateFixed,
-    SetModeVolumeTimeFixed,
+    SetModeRateOverPeriodCycle,
+    SetModeRateOverPeriod,
+    SetModeVolumeAtRateCycle,
+    SetModeVolumeAtRate,
+    SetModeVolumeOverPeriod,
     SetNumberOfChannels,
     SetNumberOfRollers,
-    SetPauseTime,
-    SetPauseTime10ths,
-    SetPauseTimeHrs,
-    SetPauseTimeMins,
+    SetCyclePauseTime,
+    SetCyclePauseTimeTenths,
+    SetCyclePauseTimeHrs,
+    SetCyclePauseTimeMins,
     SetPumpAddress,
-    SetPumpDisplayName,
+    SetDisplayName,
     SetPumpHeadModel,
     SetPumpLanguage,
     SetPumpSerialNo,
-    SetPumpTime10ths,
+    SetDispenseTimeTenths,
     SetRateOther,
-    SetRollerVolume,
+    SetCalRollerVolume,
     SetRPM,
     SetterCommand,
-    SetTimeFixed,
+    SetDispensePeriod,
     SetTubeDiameter,
-    SetVolumeFixed,
+    SetDispenseVolume,
     ShortDeviceCommand,
     ShortGetterCommand,
     ShortSetterCommand,
@@ -369,13 +370,13 @@ from .messages import (
     StoppingEvent,
     StopPump,
     SuccessResponse,
-    TimeFixedResponse,
+    DispensePeriodResponse,
     TimePumpedSinceResetResponse,
     TubeDiameterResponse,
     UnknownResponse,
     UpdateEvent,
     VerboseSetterCommand,
-    VolumeFixedResponse,
+    DispenseVolumeResponse,
     VolumeSinceResetResponse,
 )
 from .reglotypes import (
@@ -420,6 +421,7 @@ class RegloChannel:
         self,
         addr: int = 1,
         serial: None | str | Serial = _serial,
+        pump_addr: int = 1,
         tube_id=None | float,
         verbose=True,
         tube_diameter=0.51,
@@ -429,6 +431,7 @@ class RegloChannel:
         # Open serial port with data format corresponding to the RegloICC pump
         self.addr = addr
         self.serial = serial
+        self._pump_addr = pump_addr
         self._log = DataFrame(
             columns=[
                 "datetime",
@@ -472,7 +475,7 @@ class RegloChannel:
         return self._current_request
 
     @current_request.setter
-    def current_request(self, value: RequestMessage):
+    def current_request(self, value: RequestMessage | DeviceCommand):
         self.update_log(value)
         self._current_request = value
         return self.current_request
@@ -502,16 +505,23 @@ class RegloChannel:
 
     def send_request(
         self,
-        request: RequestMessage | type[RequestMessage],
+        request: (
+            RequestMessage
+            | DeviceCommand
+            | type[RequestMessage]
+            | type[DeviceCommand]
+        ),
         *args,
         addr=None,
         **kwargs,
     ):
         """Send a new request to the pump and read the response."""
-        addr = parse_none(addr, self.addr)
 
         if isinstance(request, type) and issubclass(request, RequestMessage):
-            request = request(addr, *args, **kwargs)
+            if addr is not False:
+                args = (parse_none(addr, self.addr), *args)
+
+            request = request(*args, **kwargs)
             return self.send_request(request)
 
         if self.serial is None:
@@ -521,160 +531,194 @@ class RegloChannel:
         self.current_request = request
         return request.response
 
+    # PUMP ADDRESSING
+    @property
+    def pump_addr(self):
+        return self.send_request(GetPumpAddress, addr=False).addr
+
+    @pump_addr.setter
+    def pump_addr(self, value):
+        return self.send_request(SetPumpAddress, addr=value)
+
+    # 1.0 COMMUNICATIONS MANAGEMENT
+    @property
+    def channel_addressing(self):  # 1.1
+        # NOTE: always legacy pump addr (1–8), as set by "@<pump_addr>"
+        return self.send_request(GetChannelAddressing, addr=self.pump_addr)
+
+    @channel_addressing.setter
+    def channel_addressing(self, value):  # 1.2
+        # NOTE: always legacy pump addr (1–8), as set by "@<pump_addr>"
+        addr = self.pump_addr
+        return self.send_request(SetChannelAddressing, value, addr=addr)
+
+    @property
+    def event_messaging(self):  # 1.3 — pump-level
+        # TODO: auto switch between addr=0 and self.addr depending on ICC
+        return self.send_request(GetEventMessaging, addr=0)
+
+    @event_messaging.setter
+    def event_messaging(self, value):  # 1.4
+        return self.send_request(SetEventMessaging, value, addr=0)
+
+    @property
+    def protocol_version(self):  # 1.5
+        return self.send_request(GetProtocolVersion, addr=0)
+
     # 2.0 PUMP DRIVE
-    def start(self):
+    def start(self):  # 2.1
         return self.send_request(StartPump)
 
-    def stop(self):
+    def stop(self):  # 2.2
         return self.send_request(StopPump)
 
-    def pause(self):
+    def pause(self):  # 2.3
         return self.send_request(PausePump)
 
     @property
-    def direction(self):
+    def direction(self):  # 2.4
         return self.send_request(GetDirection)
 
     @direction.setter
-    def direction(self, value):
+    def direction(self, value):  # 2.5 – 2.6
         if DIR_KEY[value] == CW:
             return self.send_request(SetClockwise)
         elif DIR_KEY[value] == CCW:
             return self.send_request(SetCounterClockwise)
 
     @property
-    def error(self):
+    def error(self):  # 2.7
         return self.send_request(GetPumpError)
 
     # 3.0 OPERATIONAL MODES AND SETTINGS
     @property
-    def mode(self):
+    def mode(self):  # 3.1
         return self.send_request(GetMode)
 
     @mode.setter
-    def mode(self, value):
+    def mode(self, value):  # 3.2 – 3.8
         if value == MODE_RPM:
             return self.send_request(SetModeRPM)
         elif value == MODE_FLOWRATE:
             return self.send_request(SetModeFlowrate)
         elif value == MODE_VOL_RATE:
-            return self.send_request(SetModeVolumeRateFixed)
+            return self.send_request(SetModeVolumeAtRate)
         elif value == MODE_VOL_TIME:
-            return self.send_request(SetModeVolumeTimeFixed)
+            return self.send_request(SetModeVolumeOverPeriod)
         elif value == MODE_VOL_PAUSE:
-            return self.send_request(SetModeVolumeRateCycled)
+            return self.send_request(SetModeVolumeAtRateCycle)
         elif value == MODE_TIME:
-            return self.send_request(SetModeTimeRateFixed)
+            return self.send_request(SetModeRateOverPeriod)
         elif value == MODE_TIME_PAUSE:
-            return self.send_request(SetModeTimeRateCycled)
+            return self.send_request(SetModeRateOverPeriodCycle)
         else:
             return None
 
     @property
-    def rate_other(self):
+    def rate_other(self):  # 3.9
         return self.send_request(GetRateOther)
 
     @rate_other.setter
-    def rate_other(self, value):
+    def rate_other(self, value):  # 3.10
         return self.send_request(SetRateOther, value)
 
     @property
-    def rpm(self):
+    def rpm(self):  # 3.11
         return self.send_request(GetRPM)
 
     @rpm.setter
-    def rpm(self, value):
+    def rpm(self, value):  # 3.12
         return self.send_request(SetRPM, value)
 
     @property
-    def flowrate(self):
+    def flowrate(self):  # 3.13
         return self.send_request(GetFlowrate)
 
     @flowrate.setter
-    def flowrate(self, value):
+    def flowrate(self, value):  # 3.14
         return self.send_request(SetFlowrate, value)
 
     @property
-    def volume_fixed(self):
-        return self.send_request(GetVolumeFixed)
+    def dispense_volume(self):  # 3.15
+        return self.send_request(GetDispenseVolume)
 
-    @volume_fixed.setter
-    def volume_fixed(self, value):
-        return self.send_request(SetVolumeFixed, value)
-
-    @property
-    def time_fixed(self):
-        return self.send_request(GetTimeFixed)
-
-    @time_fixed.setter
-    def time_fixed(self, value):
-        return self.send_request(SetTimeFixed, value)
+    @dispense_volume.setter
+    def dispense_volume(self, value):  # 3.16
+        return self.send_request(SetDispenseVolume, value)
 
     @property
-    def cycle_pause(self):
-        return self.send_request(GetPauseTime)
+    def dispense_period(self):  # 3.17
+        return self.send_request(GetDispensePeriod)
 
-    @cycle_pause.setter
-    def cycle_pause(self, value):
-        return self.send_request(SetPauseTime, value)
+    @dispense_period.setter
+    def dispense_period(self, value):  # 3.18
+        return self.send_request(SetDispensePeriod, value)
 
     @property
-    def cycle_count(self):
+    def cycle_pause_time(self):  # 3.19
+        return self.send_request(GetCyclePauseTime)
+
+    @cycle_pause_time.setter
+    def cycle_pause_time(self, value):  # 3.20
+        return self.send_request(SetCyclePauseTime, value)
+
+    @property
+    def cycle_count(self):  # 3.21
         return self.send_request(GetCycleCount)
 
     @cycle_count.setter
-    def cycle_count(self, value):
+    def cycle_count(self, value):  # 3.22
         return self.send_request(SetCycleCount, value)
 
     @property
-    def maxflowrate(self):
+    def maxflowrate(self):  # 3.23
         return self.send_request(GetMaxFlowrate)
 
     @property
-    def maxflowrate_calibrated(self):
+    def maxflowrate_calibrated(self):  # 3.24
         return self.send_request(GetMaxFlowrateCalibrated)
 
-    def flowrate2dispense(self, volume, flowrate):
+    def flowrate2dsptime(self, volume, flowrate):  # 3.25
         return self.send_request(GetDispenseTimeByFlowrate, volume, flowrate)
 
-    def rpm2dispense(self, volume, rpm):
-        return self.send_request(GetDispenseTimeByFlowrate, volume, rpm)
+    def rpm2dsptime(self, volume, rpm):  # 3.26
+        return self.send_request(GetDispenseTimeByRPM, volume, rpm)
 
     # 4.0 CONFIGURATION
     @property
-    def tube_diameter(self):
+    def tube_diameter(self):  # 4.1
         return self.send_request(GetTubeDiameter)
 
     @tube_diameter.setter
-    def tube_diameter(self, value):
+    def tube_diameter(self, value):  # 4.2
         return self.send_request(SetTubeDiameter, value)
 
     @property
-    def backsteps(self):
+    def backsteps(self):  # 4.3
         return self.send_request(GetBacksteps)
 
     @backsteps.setter
-    def backsteps(self, value):
+    def backsteps(self, value):  # 4.4
         return self.send_request(SetBacksteps, value)
 
-    def reset(self):
+    def reset_config(self):  # 4.5
         return self.send_request(ResetConfigData)
 
     # 5.0 CALIBRATION
     @property
-    def cal_direction(self):
+    def cal_direction(self):  # 5.1
         return self.send_request(GetCalDirection)
 
     @cal_direction.setter
-    def cal_direction(self, value):
+    def cal_direction(self, value):  # 5.2
         return self.send_request(SetCalDirection, value)
 
     @property
-    def cal_targetvol(self):
+    def cal_targetvol(self):  # 5.3
         return self.send_request(GetCalTargetVolume)
 
     @cal_targetvol.setter
-    def cal_targetvol(self, value):
+    def cal_targetvol(self, value):  # 5.4
         return self.send_request(SetCalTargetVolume, value)
 
     @property
@@ -682,118 +726,208 @@ class RegloChannel:
         return getattr(self, "_cal_actualvol", None)
 
     @cal_actualvol.setter
-    def cal_actualvol(self, value):
-        self._cal_actualvol = self.send_request(SetCalActualVolume, value)
-        return self.cal_actualvol
+    def cal_actualvol(self, value):  # 5.5
+        response = self.send_request(SetCalActualVolume, value)
+        self._cal_actualvol = SetCalActualVolume._types[0](value)
+        return response
 
     @property
-    def cal_time(self):
-        return self.send_request(GetCalTime)
+    def cal_duration(self):  # 5.6
+        return self.send_request(GetCalDuration)
 
-    @cal_time.setter
-    def cal_time(self, value):
-        return self.send_request(SetCalTime, value)
+    @cal_duration.setter
+    def cal_duration(self, value):  # 5.7
+        return self.send_request(SetCalDuration, value)
 
     @property
-    def runtime_since_cal(self):
+    def runtime_since_cal(self):  # 5.8
         return self.send_request(GetRuntimeSinceCal)
 
-    def start_calibration(self):
+    def start_calibration(self):  # 5.9
         return self.send_request(StartCalibration)
 
-    def cancel_calibration(self):
+    def cancel_calibration(self):  # 5.10
         return self.send_request(CancelCalibration)
 
     # 6.0 SYSTEM
     @property
-    def firmware_version(self):
-        return self.send_request(GetFirmwareVersion)
+    def firmware_version(self):  # 6.1
+        return self.send_request(GetFirmwareVersion, addr=0)
 
-    # @property
-    # def factory_rollervol(self):
-    #     return self.send_request(SetFactoryRollerVolume)
+    def override_factory_rollervol(self, n, idx_tube, vol):  # 6.2
+        return self.send_request(
+            SetFactoryRollerVolume, n, idx_tube, vol, addr=0
+        )
+
+    def save_rollerstep_settings(self):  # 6.3
+        return self.send_request(SaveRollerStepSetting, addr=0)
+
+    def restore_factory_rollervol(self):  # 6.4
+        return self.send_request(RestoreFactoryRollerVolume, addr=0)
 
     @property
-    def num_rollers(self):
+    def display_name(self):
+        return getattr(self, "_display_name", None)
+
+    @display_name.setter
+    def display_name(self, value):  # 6.5
+        response = self.send_request(SetDisplayName, value, addr=0)
+        self._display_name = SetDisplayName._types[0](value)
+        return response
+
+    @property
+    def serial_number(self):  # 6.6
+        return self.send_request(GetPumpSerialNo, addr=0)
+
+    @serial_number.setter
+    def serial_number(self, value):  # 6.7
+        return self.send_request(SetPumpSerialNo, value, addr=0)
+
+    @property
+    def language(self):  # 6.8
+        return self.send_request(GetPumpLanguage, addr=0)
+
+    @language.setter
+    def language(self, value):  # 6.9
+        return self.send_request(SetPumpLanguage, value, addr=0)
+
+    @property
+    def num_channels(self):  # 6.10
+        return self.send_request(GetNumberOfChannels, addr=0)
+
+    @num_channels.setter
+    def num_channels(self, value):  # 6.11
+        return self.send_request(GetNumberOfChannels, value, addr=0)
+
+    @property
+    def num_rollers(self):  # 6.12
         return self.send_request(GetNumberOfRollers)
 
     @num_rollers.setter
-    def num_rollers(self, value):
+    def num_rollers(self, value):  # 6.13
         return self.send_request(SetNumberOfRollers, value)
 
     @property
-    def revs_since_reset(self):
+    def revs_since_reset(self):  # 6.14
         return self.send_request(GetRevsSinceReset)
 
     @property
-    def vol_since_reset(self):
+    def vol_since_reset(self):  # 6.15
         return self.send_request(GetVolumeSinceReset)
 
     @property
-    def pumptime_since_reset(self):
+    def pumptime_since_reset(self):  # 6.16
         return self.send_request(GetTimePumpedSinceReset)
 
+    def enable_gui(self):  # 6.17
+        return self.send_request(EnableGUI, addr=0)
+
+    def disable_gui(self):  # 6.18
+        return self.send_request(DisableGUI, addr=0)
+
     @property
-    def pumptime(self):
-        return self.send_request(GetPumpTime10ths)
+    def display_nums(self):
+        return getattr(self, "_display_nums", None)
+
+    @display_nums.setter
+    def display_nums(self, value):  # 6.19
+        response = self.send_request(SetDisplayNumbers, value, addr=0)
+        self._display_nums = SetDisplayNumbers._types[0](value)
+        return response
+
+    @property
+    def display_chars(self):
+        return getattr(self, "_display_chars", None)
+
+    @display_chars.setter
+    def display_chars(self, value):  # 6.20
+        response = self.send_request(SetDisplayCharacters, value, addr=0)
+        self._display_chars = SetDisplayCharacters._types[0](value)
+        return response
+
+    @property
+    def run_status(self):  # 6.21
+        return self.send_request(GetRunStatus, addr=0)
+
+    @property
+    def model_info(self):  # 6.22
+        return self.send_request(GetModelInfo, addr=0)
+
+    @property
+    def pumphead_model(self):  # 6.23
+        return self.send_request(GetPumpHeadModel, addr=0)
+
+    @pumphead_model.setter
+    def pumphead_model(self):  # 6.24
+        return self.send_request(SetPumpHeadModel, addr=0)
+
+    @property
+    def pumptime(self):  # 6.25
+        return self.send_request(GetDispenseTimeTenths)
 
     @pumptime.setter
-    def pumptime(self, value: int | tuple[int, str | None]):
+    def pumptime(self, value: int | tuple[int, str | None]):  # 6.26 – 6.28
         return self._set_time_in_units(
-            SetPumpTime10ths, SetDispenseTimeMins, SetDispenseTimeHrs, value
+            SetDispenseTimeTenths,
+            SetDispenseTimeMins,
+            SetDispenseTimeHrs,
+            value,
         )
 
     @property
-    def loworder_steps(self):
+    def loworder_steps(self):  # 6.29
         return self.send_request(GetLowOrderSteps)
 
     @loworder_steps.setter
-    def loworder_steps(self, value):
+    def loworder_steps(self, value):  # 6.30
         return self.send_request(SetLowOrderSteps, value)
 
     @property
-    def highorder_steps(self):
+    def highorder_steps(self):  # 6.31
         return self.send_request(GetHighOrderSteps)
 
     @highorder_steps.setter
-    def highorder_steps(self, value):
+    def highorder_steps(self, value):  # 6.32
         return self.send_request(SetHighOrderSteps, value)
 
     @property
-    def rollervol(self):
-        return self.send_request(GetRollerVolume)
+    def rollervol(self):  # 6.33
+        return self.send_request(GetCalRollerVolume)
 
     @rollervol.setter
-    def rollervol(self, value):
-        return self.send_request(SetRollerVolume, value)
+    def rollervol(self, value):  # 6.34
+        return self.send_request(SetCalRollerVolume, value)
 
-    def reset_calibration(self):
+    def reset_calibration(self):  # 6.35
         return self.send_request(ResetCalibrationData)
 
     @property
-    def pausetime(self):
-        return self.send_request(GetPauseTime10ths)
+    def pausetime(self):  # 6.36
+        return self.send_request(GetCyclePauseTimeTenths)
 
     @pausetime.setter
-    def pausetime(self, value: int | tuple[int, str | None]):
+    def pausetime(self, value: int | tuple[int, str | None]):  # 6.37 – 6.39
         return self._set_time_in_units(
-            SetPauseTime10ths, SetPauseTimeMins, SetPauseTimeHrs, value
+            SetCyclePauseTimeTenths,
+            SetCyclePauseTimeMins,
+            SetCyclePauseTimeHrs,
+            value,
         )
 
     @property
-    def totalvol_since_reset(self):
+    def totalvol_since_reset(self):  # 6.40
         return self.send_request(GetTotalVolumeSinceReset)
 
-    def save_pump_settings(self):
-        return self.send_request(SavePumpSettings)
+    def save_pump_settings(self):  # 6.41
+        return self.send_request(SavePumpSettings, addr=0)
 
     @property
-    def footswitch_status(self):
-        return self.send_request(GetFootSwitchStatus)
+    def footswitch_status(self):  # 6.42
+        return self.send_request(GetFootSwitchStatus, addr=0)
 
     # HELPER
     def _set_time_in_units(self, settenths, setmins, sethrs, value):
-        value, unit = (value, None) if isinstance(value, int) else value
+        value, unit = value if isinstance(value, tuple) else (value, None)
         if unit in ("10ths", "10ths", "1/10", "0.1", "tenth", "tenths", None):
             return self.send_request(settenths, value)
         elif unit.lower in ("min", "mins", "minute", "minutes", "m"):

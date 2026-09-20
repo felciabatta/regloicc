@@ -6,6 +6,7 @@ from serial import Serial
 from ..utils import parse_none
 from .constants import (
     AT,
+    CHANNEL_ADDRESSING,
     CR,
     CRLF,
     EVT_CHANNEL_STOP,
@@ -35,6 +36,7 @@ from .constants import (
     GET_MODEL_INFO,
     GET_PAUSE_10THS,
     GET_PAUSE_TIME,
+    GET_PROTOCOL_VER,
     GET_RATE_OTHER,
     GET_REV_SINCE_RESET,
     GET_ROLLERNO,
@@ -45,7 +47,6 @@ from .constants import (
     GET_RUN_STATUS,
     GET_RUN_TIME,
     GET_RUNTIME_SINCE,
-    GET_SERIAL_VER,
     GET_SERIALNO,
     GET_TARGET_VOL,
     GET_TIME_10THS,
@@ -53,6 +54,7 @@ from .constants import (
     GET_VOL,
     GET_VOL_SINCE_RESET,
     GET_VOLALL_SINCE_RESET,
+    LEGACY_ADDRESSING,
     NEGATIVE,
     ONEBYTE,
     POSITIVE,
@@ -114,7 +116,10 @@ from .constants import (
     VB,
 )
 from .reglotypes import (
+    AddressType,
     BooleanType,
+    ChannelAddressType,
+    ChannelOrPxAddressType,
     CharType,
     DiameterType,
     DirectionType,
@@ -131,11 +136,15 @@ from .reglotypes import (
     MissingType,
     NegativeType,
     PositiveType,
+    ProxyAddressType,
+    ProxyOrChAddressType,
+    PumpAddressType,
     StatusType,
     StringType,
     SuccessType,
     TimeType1,
     TimeType2,
+    UnAddressedType,
     UnknownType,
     VolumeType1,
     VolumeType2,
@@ -176,12 +185,83 @@ class DeviceMessage(RegloMessage):
     """Abstract base class for messages received from the device"""
 
 
-class StatusResponse(DeviceMessage):
+class OneByteResponse(DeviceMessage):
+    _char = "X"
+
+    def __init__(self, char, **kwargs) -> None:
+        self._char = char
+        super().__init__(**kwargs)
+
+    def __repr__(self) -> str:
+        return f"OneByteResponse({self.char!r})"
+
+    def __str__(self) -> str:
+        return str(self.char)
+
+    @property
+    def char(self):
+        return self._char
+
+    @char.setter
+    def char(self, value):
+        if isinstance(value, str):
+            value = CharType(value)
+        elif isinstance(value, int):
+            value = CharType(str(value))
+        elif not isinstance(value, CharType):
+            raise ValueError(
+                f"value {value!r} cannot be converted to CharType"
+            )
+
+        self._char = value
+
+    @classmethod
+    def from_str(cls, s, **kwargs):
+        return cls(s, **kwargs)
+
+    @classmethod
+    def read(cls, serial: Serial):
+        s = serial.read(ONEBYTE).decode()
+        return cls.from_str(s, datetime=cls.now())
+
+
+class AddressResponse(OneByteResponse):
+    _addr = 1
+
+    def __init__(self, addr, **kwargs) -> None:
+        self.addr = addr
+        super().__init__(str(addr), **kwargs)
+
+    def __repr__(self) -> str:
+        return f"AddressResponse({self.addr!r})"
+
+    def __str__(self) -> str:
+        return str(self.addr)
+
+    @property
+    def addr(self):
+        return self._addr
+
+    @addr.setter
+    def addr(self, value):
+        if isinstance(value, int):
+            value = AddressType(value)
+        elif isinstance(value, str) and len(value) == 1 and value.isnumeric:
+            value = AddressType(int(value))
+        elif not isinstance(value, AddressType):
+            raise ValueError(
+                f"value {value!r} cannot be converted to AddressType"
+            )
+
+        self._addr = value
+
+
+class StatusResponse(OneByteResponse):
     _statustype = None
 
     def __init__(self, status, **kwargs) -> None:
         self._status = status
-        return super().__init__(**kwargs)
+        return super().__init__(str(status), **kwargs)
 
     def __repr__(self) -> str:
         cls = type(self)
@@ -217,11 +297,6 @@ class StatusResponse(DeviceMessage):
             return PositiveResponse(**kwargs)
         else:
             return MiscResponse.from_str(s, **kwargs)
-
-    @classmethod
-    def read(cls, serial: Serial):
-        s = serial.read(ONEBYTE).decode()
-        return cls.from_str(s, datetime=cls.now())
 
 
 class StandardStatusReponse(StatusResponse):
@@ -361,8 +436,10 @@ class DataMessage(DeviceMessage):
         end = s[-end:] if isinstance(end, int) else end
         assert s.startswith(
             begin
-        ), f"string does not match format begin = {begin!r}"
-        assert s.endswith(end), f"string does not match format end = {end!r}"
+        ), f"response does not match format begin = {begin!r}"
+        # input(f"end is {end!r}")
+        # input(f"string is {s!r}")
+        assert s.endswith(end), f"response does not match format end = {end!r}"
         str_data = s.rstrip(end).lstrip(begin)
         cls_kwargs = dict(begin=begin, sep=sep, end=end, **kwargs)
         cls_args = str_data.split(sep)
@@ -447,7 +524,7 @@ class EventMessagingResponse(DataResponse):
     _types = (BooleanType,)
 
 
-class SerialVersionResponse(DataResponse):
+class ProtocolVersionResponse(DataResponse):
     _types = (DiscreteType1,)
 
 
@@ -477,15 +554,15 @@ class FlowrateResponse(DataResponse):
     _types = (VolumeType1,)
 
 
-class VolumeFixedResponse(DataResponse):
+class DispenseVolumeResponse(DataResponse):
     _types = (VolumeType1,)
 
 
-class TimeFixedResponse(DataResponse):
+class DispensePeriodResponse(DataResponse):
     _types = (TimeType1,)
 
 
-class PauseTimeResponse(DataResponse):
+class CyclePauseTimeResponse(DataResponse):
     _types = (TimeType1,)
 
 
@@ -531,7 +608,7 @@ class CalActualVolumeResponse(DataResponse):
     _types = (VolumeType1,)
 
 
-class CalTimeResponse(DataResponse):
+class CalDurationResponse(DataResponse):
     _types = (TimeType1,)
 
 
@@ -581,8 +658,8 @@ class PumpHeadModelResponse(DataResponse):
     _types = (DiscreteType1,)
 
 
-class PumpTime10thsResponse(DataResponse):
-    # NOTE: distinguish from GetTimeFixed?
+class DispenseTimeTenthsResponse(DataResponse):
+    # NOTE: distinguish from GetDispensePeriod?
     _types = (DiscreteType1,)
 
 
@@ -594,12 +671,12 @@ class HighOrderStepsResponse(DataResponse):
     _types = (DiscreteType3,)
 
 
-class RollerVolumeResponse(DataResponse):
+class CalRollerVolumeResponse(DataResponse):
     _types = (VolumeType1,)  # NOTE: in nl units?
 
 
-class PauseTime10thsResponse(DataResponse):
-    # NOTE: distinguish from GetPauseTime?
+class CyclePauseTimeTenthsResponse(DataResponse):
+    # NOTE: distinguish from GetCyclePauseTime?
     _types = (DiscreteType1,)
 
 
@@ -658,17 +735,33 @@ class UpdateEvent(EventMessage):
 
 
 class RequestMessage(RegloMessage):
-    _RTYPES = (StatusResponse, DataResponse)
+    _RTYPES = (StatusResponse, DataResponse, AddressResponse)
+    _addr_icctype = AddressType
+    _addr_mode = CHANNEL_ADDRESSING
 
     def __init__(
         self,
-        addr: int | uint = 0,
+        addr=None,
         end=CRLF,
-        response: None | StatusResponse | DataResponse = None,
-        rtype: None | type[StatusResponse] | type[DataResponse] = None,
+        response: (
+            None | StatusResponse | DataResponse | AddressResponse
+        ) = None,
+        rtype: (
+            None
+            | type[StatusResponse]
+            | type[DataResponse]
+            | type[AddressResponse]
+        ) = None,
+        addr_mode=_addr_mode,
+        addr_icctype=_addr_icctype,
     ) -> None:
-        assert 0 <= addr <= 8, f"Address must be in range 0–8; got {addr}"
-        self._addr = uint(addr)
+
+        # assert (
+        #     addr is None or 0 <= addr <= 8
+        # ), f"Address must be in range 0–8; got {addr}"
+        self._addr_mode = addr_mode
+        self._addr_icctype = addr_icctype
+        self.addr = addr
         self._end = end
         self._response = response
         self._rtype = rtype
@@ -681,7 +774,8 @@ class RequestMessage(RegloMessage):
         return len(str(self))
 
     def __repr__(self) -> str:
-        return f"RequestMessage({int(self.addr)}, end={self.end!r})"
+        addr = None if self.addr is None else self.addr.value
+        return f"RequestMessage({addr}, end={self.end!r})"
 
     def __str__(self):
         return self.end
@@ -689,6 +783,27 @@ class RequestMessage(RegloMessage):
     @property
     def addr(self):
         return self._addr
+
+    @addr.setter
+    def addr(self, value: int | None):
+        self._addr = self.addr_type(value)
+
+    @property
+    def addr_mode(self):
+        return self._addr_mode
+
+    @property
+    def addr_icctype(self):
+        return self._addr_icctype
+
+    @property
+    def addr_type(self) -> type:
+        is_unaddressed = self.addr_icctype is UnAddressedType
+        is_icc_mode = self.addr_mode is CHANNEL_ADDRESSING
+        if is_unaddressed or is_icc_mode:
+            return self.addr_icctype
+        else:
+            return PumpAddressType
 
     @property
     def end(self):
@@ -710,7 +825,8 @@ class RequestMessage(RegloMessage):
             value = self.rcls.read(value)
         else:
             raise ValueError(
-                "response must be str, StatusResponse or DataResponse"
+                "response must be str, StatusResponse or DataResponse, "
+                f"got type {type(value)}"
             )
 
         self._response = value
@@ -742,19 +858,36 @@ class RequestMessage(RegloMessage):
         return self.response
 
 
+class GetPumpAddress(RequestMessage):
+    _end = CR
+    _rtype = AddressResponse
+    _addr_icctype = UnAddressedType
+    _addr = None
+
+    def __init__(self) -> None:
+        return super().__init__(
+            self._addr, end=self._end, response=None, rtype=self._rtype
+        )
+
+    def __repr__(self) -> str:
+        return "GetPumpAddress()"
+
+    def __str__(self) -> str:
+        return f"{AT}{self.end}"
+
+
 class SetPumpAddress(RequestMessage):
     _end = CR
     _rtype = StatusResponse
 
     def __init__(self, addr: int | uint = 1) -> None:
         assert 1 <= addr <= 8, f"Pump address must be in range 1–8; got {addr}"
-        cls = type(self)
         return super().__init__(
-            addr, end=cls._end, response=None, rtype=cls._rtype
+            addr, end=self._end, response=None, rtype=self._rtype
         )
 
     def __repr__(self) -> str:
-        return f"PumpAddressCommand({int(self.addr)})"
+        return f"SetPumpAddress({int(self.addr)})"
 
     def __str__(self) -> str:
         return f"{AT}{self.addr}{self.end}"
@@ -866,6 +999,7 @@ class GetChannelAddressing(ShortGetterCommand):  # 1.1
 
     _rtype = ChannelAddressingResponse
     _code = GET_CHN_ADR
+    _addr_icctype = PumpAddressType
 
 
 class SetChannelAddressing(SetterCommand):  # 1.2
@@ -873,6 +1007,7 @@ class SetChannelAddressing(SetterCommand):  # 1.2
 
     _types = (BooleanType,)
     _code = SET_CHN_ADR
+    _addr_icctype = PumpAddressType
 
 
 class GetEventMessaging(ShortGetterCommand):  # 1.3
@@ -880,6 +1015,7 @@ class GetEventMessaging(ShortGetterCommand):  # 1.3
 
     _rtype = EventMessagingResponse
     _code = GET_EVT_MSG
+    _addr_icctype = ProxyAddressType
 
 
 class SetEventMessaging(SetterCommand):  # 1.4
@@ -887,13 +1023,15 @@ class SetEventMessaging(SetterCommand):  # 1.4
 
     _types = (BooleanType,)
     _code = GET_EVT_MSG
+    _addr_icctype = ProxyAddressType
 
 
-class GetSerialVersion(ShortGetterCommand):  # 1.5
+class GetProtocolVersion(ShortGetterCommand):  # 1.5
     """Get an integer representing the version of the serial protocol."""
 
-    _rtype = SerialVersionResponse
-    _code = GET_SERIAL_VER
+    _rtype = ProtocolVersionResponse
+    _code = GET_PROTOCOL_VER
+    _addr_icctype = ProxyAddressType
 
 
 # 2.0 PUMP DRIVE
@@ -901,18 +1039,21 @@ class StartPump(ShortSetterCommand):  # 2.1
     """Start pump."""
 
     _code = SET_START
+    _addr_icctype = ChannelAddressType
 
 
 class StopPump(ShortSetterCommand):  # 2.2
     """Stop pumping."""
 
     _code = SET_STOP
+    _addr_icctype = ChannelAddressType
 
 
 class PausePump(ShortSetterCommand):  # 2.3
     """Pause pumping (STOP in RPM or flow rate mode)."""
 
     _code = SET_PAUSE
+    _addr_icctype = ChannelAddressType
 
 
 class GetDirection(ShortGetterCommand):  # 2.4
@@ -920,25 +1061,29 @@ class GetDirection(ShortGetterCommand):  # 2.4
 
     _rtype = DirectionResponse
     _code = GET_DIR
+    _addr_icctype = ChannelAddressType
 
 
 class SetClockwise(ShortSetterCommand):  # 2.5
     """Set rotation direction to clockwise."""
 
     _code = SET_CW
+    _addr_icctype = ChannelAddressType
 
 
 class SetCounterClockwise(ShortSetterCommand):  # 2.6
     """Set rotation direction to counter-clockwise."""
 
     _code = SET_CCW
+    _addr_icctype = ChannelAddressType
 
 
 class GetPumpError(ShortGetterCommand):  # 2.7
-    """Cause of `–` cannot run response = Parameter #1, Limiting value that was exceeded = Parameter #2."""
+    """Cause of `-` cannot run response = Parameter #1, Limiting value that was exceeded = Parameter #2."""
 
     _rtype = PumpErrorResponse
     _code = GET_DRIVE_ERR
+    _addr_icctype = ChannelAddressType
 
 
 # 3.0 OPERATIONAL MODES AND SETTINGS
@@ -947,48 +1092,56 @@ class GetMode(ShortGetterCommand):  # 3.1
 
     _rtype = ModeResponse
     _code = GET_MODE
+    _addr_icctype = ChannelAddressType
 
 
 class SetModeRPM(ShortSetterCommand):  # 3.2
     """Set pump/channel to RPM mode."""
 
     _code = SET_MODE_RPM
+    _addr_icctype = ChannelAddressType
 
 
 class SetModeFlowrate(ShortSetterCommand):  # 3.3
     """Set pump/channel to Flow Rate mode."""
 
     _code = SET_MODE_FLOWRATE
+    _addr_icctype = ChannelAddressType
 
 
-class SetModeVolumeRateFixed(ShortSetterCommand):  # 3.4
+class SetModeVolumeAtRate(ShortSetterCommand):  # 3.4
     """Set pump/channel to Volume (at rate) mode."""
 
     _code = SET_MODE_VOL_RATE
+    _addr_icctype = ChannelAddressType
 
 
-class SetModeVolumeTimeFixed(ShortSetterCommand):  # 3.5
+class SetModeVolumeOverPeriod(ShortSetterCommand):  # 3.5
     """Set pump/channel to Volume (over time) mode."""
 
     _code = SET_MODE_VOL_TIME
+    _addr_icctype = ChannelAddressType
 
 
-class SetModeVolumeRateCycled(ShortSetterCommand):  # 3.6
+class SetModeVolumeAtRateCycle(ShortSetterCommand):  # 3.6
     """Set pump/channel to Volume + Pause mode."""
 
     _code = SET_MODE_VOL_PAUSE
+    _addr_icctype = ChannelAddressType
 
 
-class SetModeTimeRateFixed(ShortSetterCommand):  # 3.7
+class SetModeRateOverPeriod(ShortSetterCommand):  # 3.7
     """Set pump/channel to Time mode."""
 
     _code = SET_MODE_TIME
+    _addr_icctype = ChannelAddressType
 
 
-class SetModeTimeRateCycled(ShortSetterCommand):  # 3.8
+class SetModeRateOverPeriodCycle(ShortSetterCommand):  # 3.8
     """Set pump/channel to Time + Pause mode."""
 
     _code = SET_MODE_RPM
+    _addr_icctype = ChannelAddressType
 
 
 class GetRateOther(GetterCommand):  # 3.9
@@ -997,6 +1150,7 @@ class GetRateOther(GetterCommand):  # 3.9
     _types = (BooleanType,)
     _rtype = RateOtherResponse
     _code = GET_RATE_OTHER
+    _addr_icctype = ChannelAddressType
 
 
 class SetRateOther(SetterCommand):  # 3.10
@@ -1004,6 +1158,7 @@ class SetRateOther(SetterCommand):  # 3.10
 
     _types = (DiscreteType3,)
     _code = SET_RATE_OTHER
+    _addr_icctype = ChannelAddressType
 
 
 class GetRPM(ShortGetterCommand):  # 3.11
@@ -1011,6 +1166,7 @@ class GetRPM(ShortGetterCommand):  # 3.11
 
     _rtype = RPMResponse
     _code = GET_RPM
+    _addr_icctype = ChannelAddressType
 
 
 class SetRPM(SetterCommand):  # 3.12
@@ -1018,6 +1174,7 @@ class SetRPM(SetterCommand):  # 3.12
 
     _types = (DiscreteType3,)
     _code = SET_RPM
+    _addr_icctype = ChannelAddressType
 
 
 class GetFlowrate(ShortGetterCommand):  # 3.13
@@ -1025,6 +1182,7 @@ class GetFlowrate(ShortGetterCommand):  # 3.13
 
     _rtype = FlowrateResponse
     _code = GET_FLOWRATE
+    _addr_icctype = ChannelAddressType
 
 
 class SetFlowrate(VerboseSetterCommand):  # 3.14
@@ -1033,49 +1191,56 @@ class SetFlowrate(VerboseSetterCommand):  # 3.14
     _types = (VolumeType2,)
     _rtype = FlowrateResponse
     _code = SET_FLOWRATE
+    _addr_icctype = ChannelAddressType
 
 
-class GetVolumeFixed(ShortGetterCommand):  # 3.15
+class GetDispenseVolume(ShortGetterCommand):  # 3.15
     """Get the current setting for volume in mL."""
 
-    _code = VolumeFixedResponse
+    _code = DispenseVolumeResponse
     _code = GET_VOL
+    _addr_icctype = ChannelAddressType
 
 
-class SetVolumeFixed(VerboseSetterCommand):  # 3.16
+class SetDispenseVolume(VerboseSetterCommand):  # 3.16
     """Set the current setting for volume in mL. Volume Type 2."""
 
     _types = (VolumeType2,)
-    _rtype = VolumeFixedResponse
+    _rtype = DispenseVolumeResponse
     _code = SET_VOL
+    _addr_icctype = ChannelAddressType
 
 
-class GetTimeFixed(ShortGetterCommand):  # 3.17
+class GetDispensePeriod(ShortGetterCommand):  # 3.17
     """Get the current pump run time."""
 
-    _rtype = TimeFixedResponse
+    _rtype = DispensePeriodResponse
     _code = GET_RUN_TIME
+    _addr_icctype = ChannelAddressType
 
 
-class SetTimeFixed(SetterCommand):  # 3.18
+class SetDispensePeriod(SetterCommand):  # 3.18
     """Set current pump run time using Time Type 2."""
 
     _types = (TimeType2,)
     _code = SET_RUN_TIME
+    _addr_icctype = ChannelAddressType
 
 
-class GetPauseTime(ShortGetterCommand):  # 3.19
+class GetCyclePauseTime(ShortGetterCommand):  # 3.19
     """Get pumping pause time."""
 
-    _rtype = PauseTimeResponse
+    _rtype = CyclePauseTimeResponse
     _code = GET_PAUSE_TIME
+    _addr_icctype = ChannelAddressType
 
 
-class SetPauseTime(SetterCommand):  # 3.20
+class SetCyclePauseTime(SetterCommand):  # 3.20
     """Set pumping pause time using Time Type 2."""
 
     _types = (TimeType2,)
     _code = SET_PAUSE_TIME
+    _addr_icctype = ChannelAddressType
 
 
 class GetCycleCount(ShortGetterCommand):  # 3.21
@@ -1083,6 +1248,7 @@ class GetCycleCount(ShortGetterCommand):  # 3.21
 
     _rtype = CycleCountResponse
     _code = GET_CYCLE_COUNT
+    _addr_icctype = ChannelAddressType
 
 
 class SetCycleCount(SetterCommand):  # 3.22
@@ -1090,6 +1256,7 @@ class SetCycleCount(SetterCommand):  # 3.22
 
     _types = (DiscreteType2,)
     _code = SET_CYCLE_COUNT
+    _addr_icctype = ChannelAddressType
 
 
 class GetMaxFlowrate(ShortGetterCommand):  # 3.23
@@ -1097,6 +1264,7 @@ class GetMaxFlowrate(ShortGetterCommand):  # 3.23
 
     # _rtype = MaxFlowRateResponse
     _code = GET_MAX_FLOWRATE
+    _addr_icctype = ChannelAddressType
 
 
 class GetMaxFlowrateCalibrated(ShortGetterCommand):  # 3.24
@@ -1104,6 +1272,7 @@ class GetMaxFlowrateCalibrated(ShortGetterCommand):  # 3.24
 
     # _rtype = MaxFlowRateCalibratedResponse
     _code = GET_MAX_FLOWRATE_CALIBRATED
+    _addr_icctype = ChannelAddressType
 
 
 class GetDispenseTimeByFlowrate(GetterCommand):  # 3.25
@@ -1115,6 +1284,7 @@ class GetDispenseTimeByFlowrate(GetterCommand):  # 3.25
     _types = (VolumeType2, VolumeType2)
     _rtype = DispenseTimeByFlowrateResponse
     _code = GET_DISPENSE_TIME_FLOWRATE
+    _addr_icctype = ProxyAddressType
 
 
 class GetDispenseTimeByRPM(GetterCommand):  # 3.26
@@ -1126,6 +1296,7 @@ class GetDispenseTimeByRPM(GetterCommand):  # 3.26
     _types = (VolumeType2, DiscreteType3)
     _rtype = DispenseTimeByRPMResponse
     _code = GET_DISPENSE_TIME_RPM
+    _addr_icctype = ProxyAddressType
 
 
 # 4.0 CONFIGURATION
@@ -1134,6 +1305,7 @@ class GetTubeDiameter(ShortGetterCommand):  # 4.1
 
     _rtype = TubeDiameterResponse
     _code = GET_DIAMETER
+    _addr_icctype = ChannelAddressType
 
 
 class SetTubeDiameter(SetterCommand):  # 4.2
@@ -1141,6 +1313,7 @@ class SetTubeDiameter(SetterCommand):  # 4.2
 
     _types = (DiscreteType2,)
     _code = SET_DIAMETER
+    _addr_icctype = ChannelAddressType
 
 
 class GetBacksteps(ShortGetterCommand):  # 4.3
@@ -1148,6 +1321,7 @@ class GetBacksteps(ShortGetterCommand):  # 4.3
 
     _rtype = BackstepsResponse
     _code = GET_BACKSTEP
+    _addr_icctype = ChannelAddressType
 
 
 class SetBacksteps(SetterCommand):  # 4.4
@@ -1155,12 +1329,14 @@ class SetBacksteps(SetterCommand):  # 4.4
 
     _types = (DiscreteType2,)
     _code = SET_BACKSTEP
+    _addr_icctype = ChannelAddressType
 
 
 class ResetConfigData(ShortSetterCommand):  # 4.5
     """Resets all user configurable data to default values."""
 
     _code = RESET_CONFIG_DATA
+    _addr_icctype = ChannelAddressType
 
 
 # 5.0 CALIBRATION
@@ -1169,6 +1345,7 @@ class GetCalDirection(ShortGetterCommand):  # 5.1
 
     _rtype = CalDirectionResponse
     _code = GET_CAL_DIR
+    _addr_icctype = ChannelAddressType
 
 
 class SetCalDirection(SetterCommand):  # 5.2
@@ -1176,6 +1353,7 @@ class SetCalDirection(SetterCommand):  # 5.2
 
     _types = (DirectionType,)
     _code = SET_CAL_DIR
+    _addr_icctype = ChannelAddressType
 
 
 class GetCalTargetVolume(ShortGetterCommand):  # 5.3
@@ -1183,6 +1361,7 @@ class GetCalTargetVolume(ShortGetterCommand):  # 5.3
 
     _rtype = CalTargetVolumeResponse
     _code = GET_TARGET_VOL
+    _addr_icctype = ChannelAddressType
 
 
 class SetCalTargetVolume(VerboseSetterCommand):  # 5.4
@@ -1191,6 +1370,7 @@ class SetCalTargetVolume(VerboseSetterCommand):  # 5.4
     _types = (VolumeType2,)
     _rtype = CalTargetVolumeResponse
     _code = SET_TARGET_VOL
+    _addr_icctype = ChannelAddressType
 
 
 class SetCalActualVolume(VerboseSetterCommand):  # 5.5
@@ -1199,20 +1379,23 @@ class SetCalActualVolume(VerboseSetterCommand):  # 5.5
     _types = (VolumeType2,)
     _rtype = CalActualVolumeResponse
     _code = SET_ACTUAL_VOL
+    _addr_icctype = ChannelAddressType
 
 
-class GetCalTime(ShortGetterCommand):  # 5.6
+class GetCalDuration(ShortGetterCommand):  # 5.6
     """Get the current calibration time."""
 
-    _rtype = CalTimeResponse
+    _rtype = CalDurationResponse
     _code = GET_CAL_TIME
+    _addr_icctype = ChannelAddressType
 
 
-class SetCalTime(SetterCommand):  # 5.7
+class SetCalDuration(SetterCommand):  # 5.7
     """Set the current calibration time using Time Type 2."""
 
     _types = (TimeType2,)
     _code = SET_CAL_TIME
+    _addr_icctype = ChannelAddressType
 
 
 class GetRuntimeSinceCal(ShortGetterCommand):  # 5.8
@@ -1220,18 +1403,21 @@ class GetRuntimeSinceCal(ShortGetterCommand):  # 5.8
 
     _rtype = RuntimeSinceCalResponse
     _code = GET_RUNTIME_SINCE
+    _addr_icctype = ChannelAddressType
 
 
 class StartCalibration(ShortSetterCommand):  # 5.9
     """Start calibration on a channel(s)."""
 
     _code = SET_CAL_START
+    _addr_icctype = ChannelAddressType
 
 
 class CancelCalibration(ShortSetterCommand):  # 5.10
     """Cancel calibration."""
 
     _code = SET_CAL_CANCEL
+    _addr_icctype = ChannelAddressType
 
 
 # 6.0 SYSTEM
@@ -1240,6 +1426,7 @@ class GetFirmwareVersion(ShortGetterCommand):  # 6.1
 
     _rtype = FirmwareVersionResponse
     _code = GET_FIRMWARE
+    _addr_icctype = ProxyAddressType
 
 
 class SetFactoryRollerVolume(SetterCommand):  # 6.2
@@ -1251,28 +1438,32 @@ class SetFactoryRollerVolume(SetterCommand):  # 6.2
     """
 
     _types = (DiscreteType1, DiscreteType1, VolumeType2)
-    # NOTE: distinguish from SetRollerVolume?
+    # NOTE: distinguish from SetCalRollerVolume?
     _code = SET_FACTORY_ROLLVOL
+    _addr_icctype = ProxyAddressType
 
 
-class SaveSetRollerVolume(ShortSetterCommand):  # 6.3
+class SaveRollerStepSetting(ShortSetterCommand):  # 6.3
     """Save set roller step settings."""
 
-    # NOTE: distinguish from SetRollerVolume?
+    # NOTE: distinguish from SetCalRollerVolume?
     _code = SAVE_SET_ROLLVOL
+    _addr_icctype = ProxyAddressType
 
 
-class ResetRollerVolume(ShortSetterCommand):  # 6.4
+class RestoreFactoryRollerVolume(ShortSetterCommand):  # 6.4
     """Reset roller step volume table to defaults."""
 
     _code = RESET_ROLLVOL
+    _addr_icctype = ProxyAddressType
 
 
-class SetPumpDisplayName(SetterCommand):  # 6.5
+class SetDisplayName(SetterCommand):  # 6.5
     """Set pump name for display under remote control–String."""
 
     _types = (StringType,)
     _code = SET_PUMP_NAME
+    _addr_icctype = ProxyAddressType
 
 
 class GetPumpSerialNo(ShortGetterCommand):  # 6.6
@@ -1280,6 +1471,7 @@ class GetPumpSerialNo(ShortGetterCommand):  # 6.6
 
     _rtype = PumpSerialNoResponse
     _code = GET_SERIALNO
+    _addr_icctype = ProxyAddressType
 
 
 class SetPumpSerialNo(SetterCommand):  # 6.7
@@ -1287,6 +1479,7 @@ class SetPumpSerialNo(SetterCommand):  # 6.7
 
     _types = (StringType,)
     _code = SET_SERIALNO
+    _addr_icctype = ProxyAddressType
 
 
 class GetPumpLanguage(ShortGetterCommand):  # 6.8
@@ -1294,6 +1487,7 @@ class GetPumpLanguage(ShortGetterCommand):  # 6.8
 
     _rtype = PumpLanguageResponse
     _code = GET_LANG
+    _addr_icctype = ProxyAddressType
 
 
 class SetPumpLanguage(SetterCommand):  # 6.9
@@ -1301,6 +1495,7 @@ class SetPumpLanguage(SetterCommand):  # 6.9
 
     _types = (LanguageType,)
     _code = SET_LANG
+    _addr_icctype = ProxyAddressType
 
 
 class GetNumberOfChannels(ShortGetterCommand):  # 6.10
@@ -1308,6 +1503,7 @@ class GetNumberOfChannels(ShortGetterCommand):  # 6.10
 
     _rtype = NumberOfChannelsResponse
     _code = GET_CHANNELNO
+    _addr_icctype = ProxyAddressType
 
 
 class SetNumberOfChannels(SetterCommand):  # 6.11
@@ -1315,6 +1511,7 @@ class SetNumberOfChannels(SetterCommand):  # 6.11
 
     _types = (DiscreteType2,)
     _code = SET_CHANNELNO
+    _addr_icctype = ProxyAddressType
 
 
 class GetNumberOfRollers(ShortGetterCommand):  # 6.12
@@ -1322,6 +1519,7 @@ class GetNumberOfRollers(ShortGetterCommand):  # 6.12
 
     _rtype = NumberOfRollersResponse
     _code = GET_ROLLERNO
+    _addr_icctype = ChannelAddressType
 
 
 class SetNumberOfRollers(SetterCommand):  # 6.13
@@ -1329,6 +1527,7 @@ class SetNumberOfRollers(SetterCommand):  # 6.13
 
     _types = (DiscreteType2,)
     _code = SET_ROLLERNO
+    _addr_icctype = ChannelAddressType
 
 
 class GetRevsSinceReset(ShortGetterCommand):  # 6.14
@@ -1336,14 +1535,17 @@ class GetRevsSinceReset(ShortGetterCommand):  # 6.14
 
     _rtype = RevsSinceResetResponse
     _code = GET_REV_SINCE_RESET
+    _addr_icctype = ChannelAddressType
 
 
 class GetVolumeSinceReset(ShortGetterCommand):  # 6.15
     """Get channel total volume pumped since last reset, mL."""
 
     # NOTE: distinguish from GetTotalVolumeSinceReset?
+    # same, but different output format, and only in mL
     _rtype = VolumeSinceResetResponse
     _code = GET_VOL_SINCE_RESET
+    _addr_icctype = ChannelAddressType
 
 
 class GetTimePumpedSinceReset(ShortGetterCommand):  # 6.16
@@ -1351,18 +1553,21 @@ class GetTimePumpedSinceReset(ShortGetterCommand):  # 6.16
 
     _rtype = TimePumpedSinceResetResponse
     _code = GET_TIME_SINCE_RESET
+    _addr_icctype = ChannelAddressType
 
 
 class EnableGUI(ShortSetterCommand):  # 6.17
     """Set control from the pump user interface."""
 
     _code = SET_GUI_ON
+    _addr_icctype = ProxyAddressType
 
 
-class DiableGIU(ShortSetterCommand):  # 6.18
+class DisableGUI(ShortSetterCommand):  # 6.18
     """Disable pump user interface."""
 
     _code = SET_GUI_OFF
+    _addr_icctype = ProxyAddressType
 
 
 class SetDisplayNumbers(SetterCommand):  # 6.19
@@ -1373,6 +1578,7 @@ class SetDisplayNumbers(SetterCommand):  # 6.19
 
     _types = (StringType,)
     _code = SET_DISPLAY_NUM
+    _addr_icctype = ProxyAddressType
 
 
 class SetDisplayCharacters(SetterCommand):  # 6.20
@@ -1383,12 +1589,14 @@ class SetDisplayCharacters(SetterCommand):  # 6.20
 
     _types = (StringType,)
     _code = SET_DISPLAY_CHR
+    _addr_icctype = ProxyAddressType
 
 
 class GetRunStatus(StatusGetterCommand):  # 6.21
     """Returns whether the pump is currently running or not."""
 
     _code = GET_RUN_STATUS
+    _addr_icctype = ProxyAddressType
 
 
 class GetModelInfo(ShortGetterCommand):  # 6.22
@@ -1408,6 +1616,7 @@ class GetModelInfo(ShortGetterCommand):  # 6.22
 
     _rtype = ModelInfoResponse
     _code = GET_MODEL_INFO
+    _addr_icctype = ProxyAddressType
 
 
 class GetPumpHeadModel(ShortGetterCommand):  # 6.23
@@ -1420,6 +1629,7 @@ class GetPumpHeadModel(ShortGetterCommand):  # 6.23
 
     _rtype = PumpHeadModelResponse
     _code = GET_HEAD_CODE
+    _addr_icctype = ProxyAddressType
 
 
 class SetPumpHeadModel(SetterCommand):  # 6.24
@@ -1438,38 +1648,45 @@ class SetPumpHeadModel(SetterCommand):  # 6.24
 
     _types = (DiscreteType2,)
     _code = SET_HEAD_CODE
+    _addr_icctype = ProxyAddressType
 
 
-class GetPumpTime10ths(ShortGetterCommand):  # 6.25
+class GetDispenseTimeTenths(ShortGetterCommand):  # 6.25
     """Get the current setting for pump time in 1/10 second."""
 
-    # NOTE: distinguish from GetTimeFixed?
-    _rtype = PumpTime10thsResponse
+    # NOTE: distinguish from GetDispensePeriod?
+    # - same, but different output format
+    _rtype = DispenseTimeTenthsResponse
     _code = GET_TIME_10THS
+    _addr_icctype = ChannelAddressType
 
 
-class SetPumpTime10ths(SetterCommand):  # 6.26
+class SetDispenseTimeTenths(SetterCommand):  # 6.26
     """Set the current setting for pump time in 1/10 second. Discrete Type 2."""
 
-    # NOTE: distinguish from SetTimeFixed?
+    # NOTE: distinguish from SetDispensePeriod?
+    # - same, but different input format
     _types = (DiscreteType2,)
     _code = SET_TIME_10THS
+    _addr_icctype = ChannelAddressType
 
 
 class SetDispenseTimeMins(SetterCommand):  # 6.27
     """Set the current run time setting for dispensing in minutes. Discrete Type 5."""
 
-    # NOTE: distinguish from SetTimeFixed?
+    # NOTE: distinguish from SetDispensePeriod?
     _types = (DiscreteType5,)
     _code = SET_TIME_MINS
+    _addr_icctype = ChannelAddressType
 
 
 class SetDispenseTimeHrs(SetterCommand):  # 6.28
     """Set the current run time setting for dispensing in hours. Discrete Type 5."""
 
-    # NOTE: distinguish from SetTimeFixed?
+    # NOTE: distinguish from SetDispensePeriod?
     _types = (DiscreteType5,)
     _code = SET_TIME_HRS
+    _addr_icctype = ChannelAddressType
 
 
 class GetLowOrderSteps(ShortGetterCommand):  # 6.29
@@ -1478,6 +1695,7 @@ class GetLowOrderSteps(ShortGetterCommand):  # 6.29
 
     _rtype = LowOrderStepsResponse
     _code = GET_ROLLSTEP_LO
+    _addr_icctype = ChannelAddressType
 
 
 class SetLowOrderSteps(SetterCommand):  # 6.30
@@ -1485,6 +1703,7 @@ class SetLowOrderSteps(SetterCommand):  # 6.30
 
     _types = (DiscreteType6,)
     _code = SET_ROLLSTEP_LO
+    _addr_icctype = ChannelAddressType
 
 
 class GetHighOrderSteps(ShortGetterCommand):  # 6.31
@@ -1493,6 +1712,7 @@ class GetHighOrderSteps(ShortGetterCommand):  # 6.31
 
     _rtype = HighOrderStepsResponse
     _code = GET_ROLLSTEP_HI
+    _addr_icctype = ChannelAddressType
 
 
 class SetHighOrderSteps(SetterCommand):  # 6.32
@@ -1500,20 +1720,22 @@ class SetHighOrderSteps(SetterCommand):  # 6.32
 
     _types = (DiscreteType6,)
     _code = SET_ROLLSTEP_HI
+    _addr_icctype = ChannelAddressType
 
 
-class GetRollerVolume(ShortGetterCommand):  # 6.33
+class GetCalRollerVolume(ShortGetterCommand):  # 6.33
     """Get the current roller step volume
 
     Based on the current calibration, tubing diameter and roller count.
     If no calibration has been performed the default volume is returned.
     """
 
-    _rtype = RollerVolumeResponse
+    _rtype = CalRollerVolumeResponse
     _code = GET_ROLLVOL_CAL
+    _addr_icctype = ChannelAddressType
 
 
-class SetRollerVolume(SetterCommand):  # 6.34
+class SetCalRollerVolume(SetterCommand):  # 6.34
     """Set the calibrated roller step volume to use for this pump or channel.
 
     This value is used as the calibrated value and is overwritten by
@@ -1522,65 +1744,81 @@ class SetRollerVolume(SetterCommand):  # 6.34
     """
 
     # NOTE: distinguish from SetFactoryRollerVolume
+    # - factory volume is the "default", channel-independent
+    # - calibration volume overrides default, if set
     _types = (VolumeType2,)
     _code = SET_ROLLVOL_CAL
+    _addr_icctype = ChannelAddressType
 
 
 class ResetCalibrationData(ShortSetterCommand):  # 6.35
     """Reset the pump to discard calibration data, use default roller step volume."""
 
     # NOTE: distinguish from ResetConfigData
+    # - config is for tube diameter and backsteps
+    # - calibration is for tuning volume/rate units to tube & roller specs
     _code = RESET_CAL
+    _addr_icctype = ProxyAddressType  # TODO: Double check
 
 
-class GetPauseTime10ths(ShortGetterCommand):  # 6.36
+class GetCyclePauseTimeTenths(ShortGetterCommand):  # 6.36
     """Get the current setting for pause time in 1/10 second."""
 
-    # NOTE: distinguish from GetPauseTime?
-    _rtype = PauseTime10thsResponse
+    # NOTE: distinguish from GetCyclePauseTime?
+    # - same, but different output format
+    _rtype = CyclePauseTimeTenthsResponse
     _code = GET_PAUSE_10THS
+    _addr_icctype = ChannelAddressType
 
 
-class SetPauseTime10ths(SetterCommand):  # 6.37
+class SetCyclePauseTimeTenths(SetterCommand):  # 6.37
     """Set the current setting for pause time in 1/10 second. Discrete Type 2."""
 
-    # NOTE: distinguish from SetPauseTime?
+    # NOTE: distinguish from SetCyclePauseTime?
+    # - same, but different input format
     _types = (DiscreteType2,)
     _code = SET_PAUSE_10THS
+    _addr_icctype = ChannelAddressType
 
 
-class SetPauseTimeMins(SetterCommand):  # 6.38
+class SetCyclePauseTimeMins(SetterCommand):  # 6.38
     """Set the current setting for pause time in minutes. Discrete Type 5."""
 
-    # NOTE: distinguish from SetPauseTime?
+    # NOTE: distinguish from SetCyclePauseTime?
     _types = (DiscreteType5,)
     _code = SET_PAUSE_MINS
+    _addr_icctype = ChannelAddressType
 
 
-class SetPauseTimeHrs(SetterCommand):  # 6.39
+class SetCyclePauseTimeHrs(SetterCommand):  # 6.39
     """Set the current setting for pause time in hours. Discrete Type 5."""
 
-    # NOTE: distinguish from SetPauseTime?
+    # NOTE: distinguish from SetCyclePauseTime?
     _types = (DiscreteType5,)
     _code = SET_PAUSE_HRS
+    _addr_icctype = ChannelAddressType
 
 
-class GetTotalVolumeSinceReset(GetterCommand):  # 6.40
+class GetTotalVolumeSinceReset(ShortGetterCommand):  # 6.40
     """Get the total volume dispensed since the last reset in µL, mL or liters."""
 
     # NOTE: distinguish from GetVolumeSinceReset?
+    # - same, but converts to a "nice" unit
     # _types = ()
     # _rtype = TotalVolumeSinceResetResponse
     _code = GET_VOLALL_SINCE_RESET
+    _addr_icctype = ChannelAddressType
 
 
 class SavePumpSettings(ShortSetterCommand):  # 6.41
     """Saves the current pump settings values to memory."""
 
     _code = SAVE_SET_ALL
+    _addr_icctype = ProxyAddressType
 
 
 class GetFootSwitchStatus(StatusGetterCommand):  # 6.42
     """Get the current state of the foot switch."""
 
     _code = GET_FOOTSWITCH_STATUS
+    _addr_icctype = ProxyAddressType

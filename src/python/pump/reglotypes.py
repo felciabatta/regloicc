@@ -1,5 +1,7 @@
 """RegloICC Datatypes"""
 
+from typing import Any
+
 from numpy import clip, format_float_scientific, uint
 
 from src.python.utils import parse_none
@@ -20,10 +22,22 @@ from .constants import (
     DT6_MAX,
     DT6_WIDTH,
     DT_ZERO,
+    EMPTY,
     ENGLISH,
+    ERR_CHN_SETTING,
+    ERR_CYCLE_ZERO,
+    ERR_MAX_RATE,
+    ERR_MAX_VOL,
     FAILURE,
     ISO_LANG_KEY,
     LANG_KEY,
+    MODE_FLOWRATE,
+    MODE_RPM,
+    MODE_TIME,
+    MODE_TIME_PAUSE,
+    MODE_VOL_PAUSE,
+    MODE_VOL_RATE,
+    MODE_VOL_TIME,
     NEGATIVE,
     POSITIVE,
     SP,
@@ -34,6 +48,16 @@ from .constants import (
     TIMETYPE_MAX,
     VOLTYPE_MAX,
     VOLTYPE_MIN,
+    ICC_UNADDRESSED,
+    ICC_PUMP_ADDRESSED,
+    ICC_CHANNEL_ADDRESSED,
+    ICC_PROXY_ADDRESSED,
+    ICC_CHANNEL_PREFERRED,
+    ICC_PROXY_PREFERRED,
+    LEGACY_ADDRESSING,
+    CHANNEL_ADDRESSING,
+    LEGACY_DEFAULT,
+    LEGACY_PROXY,
 )
 
 
@@ -124,16 +148,29 @@ class ClockwiseType(DirectionType):
 class DiscreteType(RegloDataType):
     def __init__(
         self,
-        value: uint | int = DT_ZERO,
+        value: uint | int | None = DT_ZERO,
         width: uint | int = 1,
-        vmin: int | uint = DT_ZERO,
+        vmin: int | uint | None = DT_ZERO,
         vmax: int | uint | None = None,
     ) -> None:
-        self._vmin = uint(vmin)
+        self._vmin = uint(vmin) if isinstance(vmin, int) else vmin
         self._vmax = uint(vmax) if isinstance(vmax, int) else vmax
-        _value = uint(clip(value, self._vmin, self._vmax))
-        super().__init__(_value, width)
+        if isinstance(value, (int, uint)):  # type: ignore
+            value = uint(clip(value, self.vmin, self.vmax))
+        super().__init__(value, width)
         pass
+
+    def __str__(self) -> str:
+        if self.value is None:
+            return EMPTY
+        else:
+            return f"{self.value:0{self.width}}"
+
+    def __repr__(self) -> str:
+        name = type(self).__name__
+        isbase = name == DiscreteType.__name__
+        args = f", width={self.width}, vmax={self.vmax}" if isbase else ""
+        return f"{name}({self.value}{args})"
 
     @property
     def vmin(self):
@@ -145,23 +182,53 @@ class DiscreteType(RegloDataType):
 
     @property
     def vrange(self):
-        return (self._vmin, self._vmax)
-
-    def __str__(self) -> str:
-        return f"{self._value:0{self._width}}"
-
-    def __repr__(self) -> str:
-        name = type(self).__name__
-        isbase = name == DiscreteType.__name__
-        args = f", width={self._width}, vmax={self._vmax}" if isbase else ""
-        return f"{name}({self._value}{args})"
+        return (self.vmin, self.vmax)
 
     @classmethod
     def from_str(cls, s, *args, **kwargs):
         return cls(uint(s), *args, **kwargs)
 
 
-class DiscreteType1(DiscreteType):
+class QuantitativeDiscreteType(DiscreteType):
+    """Discrete type representing measurable quantities."""
+
+    _unit_name = ""
+
+    def __init__(
+        self,
+        value=DT_ZERO,
+        width=1,
+        vmin=DT_ZERO,
+        vmax=None,
+        unit_name=_unit_name,
+    ) -> None:
+        self._unit_name = unit_name
+        super().__init__(value, width, vmin, vmax)
+
+    def __int__(self):
+        return int(self.value)
+
+    def __eq__(self, value):
+        return int(self) == value
+
+    def __gt__(self, other):
+        return int(self) > other
+
+    def __ge__(self, other):
+        return int(self) >= other
+
+    def __lt__(self, other):
+        return int(self) < other
+
+    def __le__(self, other):
+        return int(self) <= other
+
+    @property
+    def unit_name(self):
+        return self._unit_name
+
+
+class DiscreteType1(QuantitativeDiscreteType):
     """Up to four characters representing a discrete integer value in base 10.
 
     Unused digits are not returned.
@@ -175,7 +242,7 @@ class DiscreteType1(DiscreteType):
         super().__init__(value, width=w, vmax=DT1_MAX)
 
 
-class DiscreteType2(DiscreteType):
+class DiscreteType2(QuantitativeDiscreteType):
     """Four characters representing a discrete integer value in base 10.
 
     The value is right-justified.
@@ -189,7 +256,7 @@ class DiscreteType2(DiscreteType):
         super().__init__(value, width=DT2_WIDTH, vmax=DT2_MAX)
 
 
-class DiscreteType3(DiscreteType):
+class DiscreteType3(QuantitativeDiscreteType):
     """Six characters in base 10.
 
     The value is right-justified.
@@ -203,7 +270,7 @@ class DiscreteType3(DiscreteType):
         super().__init__(value, width=DT3_WIDTH, vmax=DT3_MAX)
 
 
-class DiscreteType4(DiscreteType):
+class DiscreteType4(QuantitativeDiscreteType):
     """Ten characters in base 10.
 
     The value is right-justified.
@@ -217,7 +284,7 @@ class DiscreteType4(DiscreteType):
         super().__init__(value, width=DT4_WIDTH, vmax=DT4_MAX)
 
 
-class DiscreteType5(DiscreteType):
+class DiscreteType5(QuantitativeDiscreteType):
     """Three characters in base 10.
     The value is right-justified.
     Unused digits to the left are zeros.
@@ -230,7 +297,7 @@ class DiscreteType5(DiscreteType):
         super().__init__(value, width=DT5_WIDTH, vmax=DT5_MAX)
 
 
-class DiscreteType6(DiscreteType):
+class DiscreteType6(QuantitativeDiscreteType):
     """Five characters in base 10.
 
     The value is right-justified.
@@ -337,7 +404,7 @@ class VolumeType2(VolumeType1):
         return cls(float(s))
 
 
-class TimeType(DiscreteType):
+class TimeType(QuantitativeDiscreteType):
     """Right-justified sequence of numeric characters representing time.
 
     :param: value:
@@ -348,11 +415,15 @@ class TimeType(DiscreteType):
         Number of seconds represented by one integer unit.
     """
 
+    _unit_name = "s"
+
     def __init__(
-        self, value: uint | int = uint(), width: uint | int = 1, unit=1.0
+        self, value=uint(), width=1, unit=1.0, unit_name=_unit_name
     ) -> None:
         self._unit = unit  # seconds
-        super().__init__(value, width=width, vmax=TIMETYPE_MAX)
+        super().__init__(
+            value, width=width, vmax=TIMETYPE_MAX, unit_name=unit_name
+        )
 
     @property
     def unit(self):
@@ -389,6 +460,8 @@ class TimeType1(TimeType):
     - Range: 0 to 35,964,000 (0 to 999 hr)
     """
 
+    _unit_name = "s/10"
+
     def __init__(self, value=DT_ZERO, unit=0.1) -> None:
         w = clip(len(str(value)), 1, 8)
         super().__init__(value, width=w, unit=unit)
@@ -405,6 +478,8 @@ class TimeType2(TimeType):
     - Units: 0.1 second (default)
     - Range: 0 to 35,964,000 (0 to 999 hr)
     """
+
+    _unit_name = "s/10"
 
     def __init__(self, value=DT_ZERO, unit=0.1) -> None:
         super().__init__(value, width=8, unit=unit)
@@ -430,7 +505,7 @@ class StringType(RegloDataType):
         err_len = f"StringType must be 0–64 characters in length; got {w}"
         assert 0 <= w <= 64, err_len
 
-        isvalid_chr = value.isascii() and not ("\r" in value or " " in value)
+        isvalid_chr = value.isascii() and not ("\r" in value)
         err_chr = (
             f"{type(self).__name__} can only contain ASCII characters"
             "(excluding `\\r`, ` `)"
@@ -453,70 +528,6 @@ class CharType(StringType):
         w = len(value)
         assert w == 1, "CharType must be a single character"
         super().__init__(value)
-
-
-class LanguageType(DiscreteType):
-    """A single numeric character representing a language.
-
-    - Width: 1
-    - Range: 0 to 3
-
-    Options are
-
-    - `0` for English
-    - `1` for French
-    - `2` for Spanish
-    - `3` for German
-    """
-
-    def __init__(self, value=ENGLISH) -> None:
-        value = value.lower() if isinstance(value, str) else value
-        isvalid = value in LANG_KEY
-        assert isvalid, f"Invalid language, choose from {set(LANG_KEY)}"
-        super().__init__(LANG_KEY[value], width=1, vmax=3)
-
-    @property
-    def name(self):
-        return STR_LANG_KEY[self._value]
-
-    @property
-    def iso(self):
-        return ISO_LANG_KEY[self._value]
-
-    def __repr__(self) -> str:
-        return f"LanguageType({self.name.capitalize()!r})"
-
-
-class AddressType(DiscreteType):
-    """A single character representing a pump or channel address.
-
-    - Width: 1
-    - Range: 1 to 8
-    """
-
-    def __init__(self, value=1) -> None:
-        super().__init__(value, width=1, vmin=1, vmax=8)
-
-    def __repr__(self) -> str:
-        return f"AddressType({self._value})"
-
-
-class DiameterType(RegloDataType):
-    def __init__(self, value: float, unit="mm") -> None:
-        value = round(clip(value, 0.0, None), 2)
-        self.unit = unit.strip()
-        super().__init__(value, width=7)
-
-    def __str__(self) -> str:
-        return f"{self._value:.2f} {self.unit}"
-
-    def __repr__(self) -> str:
-        return f"DiameterType({self._value:.2f}, unit={self.unit!r})"
-
-    @classmethod
-    def from_str(cls, s: str):
-        value, unit = s.split(SP, 1)
-        return cls(float(value), unit=unit.strip())
 
 
 class StatusType(CharType):
@@ -626,3 +637,237 @@ class UnknownType(MiscType):
     @classmethod
     def from_str(cls, s: str):
         return UnknownType(s)
+
+
+class ByteCodeType(CharType):
+    _aliases = ("",)
+
+    def __init__(self, value, *, aliases=_aliases, desc="") -> None:
+        self._aliases = aliases
+        self._desc = desc
+        super().__init__(value)
+
+    def __repr__(self) -> str:
+        v, alias, desc = self.value, self.aliases, self.desc
+        return f"ModeType({v!r}, alias={alias!r}, desc={desc!r})"
+
+    @property
+    def aliases(self):
+        return self._aliases
+
+    @property
+    def desc(self):
+        return self._desc
+
+
+class StandardByteCodeType(ByteCodeType):
+    _value = "L"
+    _aliases = ("RPM",)
+    _desc = "Revolutions per minute"
+
+    def __init__(self) -> None:
+        super().__init__(self.value, aliases=self._aliases, desc=self._desc)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}()"
+
+
+class ModeRPM(StandardByteCodeType):
+    _value = MODE_RPM
+    _aliases = ("RPM",)
+    _desc = "Dispense at a fixed rate, in revolutions per minute"
+
+
+class ModeFlowrate(StandardByteCodeType):
+    _value = MODE_FLOWRATE
+    _aliases = ("Flow Rate", "Flowrate")
+    _desc = "Dispense at a fixed rate, in mL per minute"
+
+
+class ModeVolumeAtRate(StandardByteCodeType):
+    _value = MODE_VOL_RATE
+    _aliases = ("Volume (at Rate)", "Volume at rate")
+    _desc = "Dispense a fixed volume at a preset flowrate/RPM"
+
+
+class ModeVolumeOverPeriod(StandardByteCodeType):
+    _value = MODE_VOL_TIME
+    _aliases = ("Volume (over Time)", "Volume over period")
+    _desc = "Dispense a fixed volume over a preset period"
+
+
+class ModeVolumeAtRateCycle(StandardByteCodeType):
+    _value = MODE_VOL_PAUSE
+    _aliases = ("Volume+Pause", "Volume at rate (cycle)")
+    _desc = (
+        "Dispense a fixed volume at a preset flowrate/RPM "
+        "for a number of cycles"
+    )
+
+
+class ModeRateOverPeriod(StandardByteCodeType):
+    _value = MODE_TIME
+    _aliases = ("Time", "Time (at Rate)", "Rate over period")
+    _desc = "Dispense over a fixed period at a preset flowrate/RPM"
+
+
+class ModeRateOverPeriodCycle(StandardByteCodeType):
+    _value = MODE_TIME_PAUSE
+    _aliases = ("Time+Pause", "Rate over period (cycle)")
+    _desc = (
+        "Dispense over a fixed period at a preset flowrate/RPM "
+        "for a number of cycles"
+    )
+
+
+class CycleErrorType(StandardByteCodeType):
+    _value = ERR_CYCLE_ZERO
+    _aliases = (ERR_CYCLE_ZERO, "Cycle error")
+    _desc = "Cycle count of 0"
+
+
+class FlowErrorType(StandardByteCodeType):
+    _value = ERR_MAX_RATE
+    _aliases = (ERR_MAX_RATE, "Flowrate error")
+    _desc = "Max flow rate exceeded or flow rate is set to 0"
+
+
+class VolumeErrorType(StandardByteCodeType):
+    _value = ERR_MAX_VOL
+    _aliases = (ERR_MAX_VOL, "Volume error")
+    _desc = "Max volume exceeded"
+
+
+class LimitingValueUndefinedType(StringType):
+    pass
+
+
+class LimitingFlowrateType(VolumeType1):
+    pass
+
+
+class LimitingVolumeType(VolumeType1):
+    pass
+
+
+class LanguageType(DiscreteType):
+    """A single numeric character representing a language.
+
+    - Width: 1
+    - Range: 0 to 3
+
+    Options are
+
+    - `0` for English
+    - `1` for French
+    - `2` for Spanish
+    - `3` for German
+    """
+
+    def __init__(self, value=ENGLISH) -> None:
+        value = value.lower() if isinstance(value, str) else value
+        isvalid = value in LANG_KEY
+        assert isvalid, f"Invalid language, choose from {set(LANG_KEY)}"
+        super().__init__(LANG_KEY[value], width=1, vmax=3)
+
+    @property
+    def name(self):
+        return STR_LANG_KEY[self._value]
+
+    @property
+    def iso(self):
+        return ISO_LANG_KEY[self._value]
+
+    def __repr__(self) -> str:
+        return f"LanguageType({self.name.capitalize()!r})"
+
+
+class AddressType(DiscreteType):
+    """A single character representing a pump or channel address.
+
+    - Width: 1
+    - Range: 0 to 8
+    """
+
+    _vmin = 0
+    _vmax = 8
+    _width = 1
+
+    def __init__(self, value: int | None = LEGACY_DEFAULT) -> None:
+        super().__init__(
+            value, width=self._width, vmin=self._vmin, vmax=self._vmax
+        )
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._value})"
+
+
+class PumpAddressType(AddressType):
+    _vmin = 1
+    _vmax = 8
+
+
+class ChannelAddressType(AddressType):
+    _vmin = 1
+    _vmax = 4
+
+
+class ProxyAddressType(AddressType):
+    _vmax = _vmin = 0
+
+    def __init__(self) -> None:
+        super().__init__(LEGACY_PROXY)
+
+
+class ChannelOrPxAddressType(AddressType):
+    _vmin = 0
+    _vmax = 4
+
+    def __init__(self, value=LEGACY_DEFAULT) -> None:
+        if value == 0:
+            print(
+                "Warning: channel address (1–4) is preferred; pump behaviour "
+                "may be unreliable when using placeholder address (0)"
+            )
+        super().__init__(value)
+
+
+class ProxyOrChAddressType(AddressType):
+    _vmin = 0
+    _vmax = 4
+
+    def __init__(self, value=LEGACY_PROXY) -> None:
+        if value != LEGACY_PROXY:
+            print(
+                f"Warning: placeholder address ({LEGACY_PROXY}) is preferred"
+            )
+        super().__init__(value)
+
+
+class UnAddressedType(AddressType):
+    _vmax = _vmin = None
+    _width = 0
+
+    def __init__(self) -> None:
+        super().__init__(None)
+
+    def __repr__(self) -> str:
+        return "UnAddressedType()"
+
+
+class DiameterType(RegloDataType):
+    def __init__(self, value: float, unit_name="mm") -> None:
+        value = round(clip(value, 0.0, None), 2)
+        self.unit_name = unit_name.strip()
+        super().__init__(value, width=7)
+
+    def __str__(self) -> str:
+        return f"{self.value:.2f} {self.unit_name}"
+
+    def __repr__(self) -> str:
+        return f"DiameterType({self.value:.2f}, unit_name={self.unit_name!r})"
+
+    @classmethod
+    def from_str(cls, s: str):
+        value, unit = s.split(SP, 1)
+        return cls(float(value), unit_name=unit.strip())
