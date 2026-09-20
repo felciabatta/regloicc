@@ -9,7 +9,7 @@ dependencies:
   - numpy
   - ipython
   - jupyter
-  - python
+  - python=3.13  # due to clash with scikit-image sub-dependency
   - ipykernel
   - pyserial
   - xmltodict
