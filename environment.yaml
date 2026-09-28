@@ -17,6 +17,8 @@ dependencies:
   - isort
   - black
   - flake8
+  - regex
+  - pyvips
   - pip:
     - torch
     - torchvision
