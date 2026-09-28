@@ -47,6 +47,7 @@ from .constants import (
     AT,
     CARET,
     CCW,
+    CHANNEL_ADDRESSING,
     CR,
     CRLF,
     CSTATUS_CALI_PENDING,
@@ -79,9 +80,9 @@ from .constants import (
     EVT_DESC_KEY,
     EVT_ID,
     FAILURE,
-    FRENCH,
     FOOTSWITCH_GROUNDED,
     FOOTSWITCH_OPEN,
+    FRENCH,
     GERMAN,
     GET_BACKSTEP,
     GET_CAL_DIR,
@@ -106,6 +107,7 @@ from .constants import (
     GET_MODEL_INFO,
     GET_PAUSE_10THS,
     GET_PAUSE_TIME,
+    GET_PROTOCOL_VER,
     GET_RATE_OTHER,
     GET_REV_SINCE_RESET,
     GET_ROLLERNO,
@@ -116,7 +118,6 @@ from .constants import (
     GET_RUN_STATUS,
     GET_RUN_TIME,
     GET_RUNTIME_SINCE,
-    GET_PROTOCOL_VER,
     GET_SERIALNO,
     GET_TARGET_VOL,
     GET_TIME_10THS,
@@ -219,22 +220,29 @@ from .constants import (
     VOLTYPE_MIN,
 )
 from .messages import (
+    PumpAddressResponse,
     BackstepsResponse,
     CalActualVolumeResponse,
     CalDirectionResponse,
-    CalTargetVolumeResponse,
     CalDurationResponse,
+    CalRollerVolumeResponse,
+    CalTargetVolumeResponse,
     CancelCalibration,
     ChannelAddressingResponse,
     CycleCountResponse,
+    CyclePauseTimeResponse,
+    CyclePauseTimeTenthsResponse,
     DataMessage,
     DataResponse,
     DeviceCommand,
     DeviceMessage,
-    DisableGUI,
     DirectionResponse,
+    DisableGUI,
+    DispensePeriodResponse,
     DispenseTimeByFlowrateResponse,
     DispenseTimeByRPMResponse,
+    DispenseTimeTenthsResponse,
+    DispenseVolumeResponse,
     EnableGUI,
     EventMessage,
     EventMessagingResponse,
@@ -243,13 +251,19 @@ from .messages import (
     FlowrateResponse,
     GetBacksteps,
     GetCalDirection,
-    GetCalTargetVolume,
     GetCalDuration,
+    GetCalRollerVolume,
+    GetCalTargetVolume,
     GetChannelAddressing,
     GetCycleCount,
+    GetCyclePauseTime,
+    GetCyclePauseTimeTenths,
     GetDirection,
+    GetDispensePeriod,
     GetDispenseTimeByFlowrate,
     GetDispenseTimeByRPM,
+    GetDispenseTimeTenths,
+    GetDispenseVolume,
     GetEventMessaging,
     GetFirmwareVersion,
     GetFlowrate,
@@ -262,27 +276,21 @@ from .messages import (
     GetModelInfo,
     GetNumberOfChannels,
     GetNumberOfRollers,
-    GetCyclePauseTime,
-    GetCyclePauseTimeTenths,
+    GetProtocolVersion,
     GetPumpAddress,
     GetPumpError,
     GetPumpHeadModel,
     GetPumpLanguage,
     GetPumpSerialNo,
-    GetDispenseTimeTenths,
     GetRateOther,
     GetRevsSinceReset,
-    GetCalRollerVolume,
     GetRPM,
     GetRunStatus,
     GetRuntimeSinceCal,
-    GetProtocolVersion,
     GetterCommand,
-    GetDispensePeriod,
     GetTimePumpedSinceReset,
     GetTotalVolumeSinceReset,
     GetTubeDiameter,
-    GetDispenseVolume,
     GetVolumeSinceReset,
     HighOrderStepsResponse,
     LowOrderStepsResponse,
@@ -294,14 +302,12 @@ from .messages import (
     NumberOfChannelsResponse,
     NumberOfRollersResponse,
     PausePump,
-    CyclePauseTimeTenthsResponse,
-    CyclePauseTimeResponse,
     PositiveResponse,
+    ProtocolVersionResponse,
     PumpErrorResponse,
     PumpHeadModelResponse,
     PumpLanguageResponse,
     PumpSerialNoResponse,
-    DispenseTimeTenthsResponse,
     RateOtherResponse,
     RegloMessage,
     RequestMessage,
@@ -309,57 +315,56 @@ from .messages import (
     ResetConfigData,
     RestoreFactoryRollerVolume,
     RevsSinceResetResponse,
-    CalRollerVolumeResponse,
     RPMResponse,
     RuntimeSinceCalResponse,
     SavePumpSettings,
     SaveRollerStepSetting,
     Serial,
-    ProtocolVersionResponse,
     SetBacksteps,
     SetCalActualVolume,
     SetCalDirection,
-    SetCalTargetVolume,
     SetCalDuration,
+    SetCalRollerVolume,
+    SetCalTargetVolume,
     SetChannelAddressing,
     SetClockwise,
     SetCounterClockwise,
     SetCycleCount,
+    SetCyclePauseTime,
+    SetCyclePauseTimeHrs,
+    SetCyclePauseTimeMins,
+    SetCyclePauseTimeTenths,
+    SetDispensePeriod,
     SetDispenseTimeHrs,
     SetDispenseTimeMins,
+    SetDispenseTimeTenths,
+    SetDispenseVolume,
     SetDisplayCharacters,
+    SetDisplayName,
     SetDisplayNumbers,
     SetEventMessaging,
     SetFactoryRollerVolume,
     SetFlowrate,
     SetHighOrderSteps,
     SetLowOrderSteps,
+    SetMode,
     SetModeFlowrate,
-    SetModeRPM,
-    SetModeRateOverPeriodCycle,
     SetModeRateOverPeriod,
-    SetModeVolumeAtRateCycle,
+    SetModeRateOverPeriodCycle,
+    SetModeRPM,
     SetModeVolumeAtRate,
+    SetModeVolumeAtRateCycle,
     SetModeVolumeOverPeriod,
     SetNumberOfChannels,
     SetNumberOfRollers,
-    SetCyclePauseTime,
-    SetCyclePauseTimeTenths,
-    SetCyclePauseTimeHrs,
-    SetCyclePauseTimeMins,
     SetPumpAddress,
-    SetDisplayName,
     SetPumpHeadModel,
     SetPumpLanguage,
     SetPumpSerialNo,
-    SetDispenseTimeTenths,
     SetRateOther,
-    SetCalRollerVolume,
     SetRPM,
     SetterCommand,
-    SetDispensePeriod,
     SetTubeDiameter,
-    SetDispenseVolume,
     ShortDeviceCommand,
     ShortGetterCommand,
     ShortSetterCommand,
@@ -370,18 +375,17 @@ from .messages import (
     StoppingEvent,
     StopPump,
     SuccessResponse,
-    DispensePeriodResponse,
     TimePumpedSinceResetResponse,
     TubeDiameterResponse,
     UnknownResponse,
     UpdateEvent,
     VerboseSetterCommand,
-    DispenseVolumeResponse,
     VolumeSinceResetResponse,
 )
 from .reglotypes import (
     AddressType,
     BooleanType,
+    ChannelAddressType,
     CharType,
     ClockwiseType,
     CounterClockwiseType,
@@ -401,6 +405,7 @@ from .reglotypes import (
     MissingType,
     NegativeType,
     PositiveType,
+    PumpAddressType,
     RegloDataType,
     StatusType,
     StringType,
@@ -411,27 +416,34 @@ from .reglotypes import (
     UnknownType,
     VolumeType1,
     VolumeType2,
+    ByteCodeType,
+    StandardByteCodeType,
+    ModeRPM,
+    ModeFlowrate,
+    ModeVolumeAtRate,
+    ModeVolumeOverPeriod,
+    ModeVolumeAtRateCycle,
+    ModeRateOverPeriod,
+    ModeRateOverPeriodCycle,
 )
 
 
-class RegloChannel:
+class RegloDevice:
     _serial = None
+    _addr_mode = CHANNEL_ADDRESSING
 
     def __init__(
         self,
-        addr: int = 1,
+        addr: ChannelAddressType = ChannelAddressType(),
         serial: None | str | Serial = _serial,
-        pump_addr: int = 1,
-        tube_id=None | float,
+        pump_addr: PumpAddressType | None = None,
         verbose=True,
         tube_diameter=0.51,
         display_message="we be pumpin'",
-        mode=MODE_FLOWRATE,
+        mode=ModeFlowrate(),
     ) -> None:
         # Open serial port with data format corresponding to the RegloICC pump
-        self.addr = addr
         self.serial = serial
-        self._pump_addr = pump_addr
         self._log = DataFrame(
             columns=[
                 "datetime",
@@ -444,7 +456,14 @@ class RegloChannel:
         self.verbose = verbose
         self._current_request = None
 
-        pass
+        self.addr = addr
+        self.pump_addr = pump_addr
+        self.channel_addressing = self._addr_mode
+        self.tube_diameter = round(tube_diameter * 100)
+        self.display_nums = display_message
+        self.stop()
+
+        return None
 
     def __repr__(self) -> str:
         return f"RegloChannel({self.addr, self.serial})"
@@ -459,7 +478,7 @@ class RegloChannel:
             serial = value
         elif isinstance(value, (str, type(None))):
             serial = Serial(
-                get_port(value),
+                get_port(value, "ISMATEC Reglo ICC"),
                 9600,
                 parity=PARITY_NONE,
                 stopbits=STOPBITS_ONE,
@@ -509,6 +528,8 @@ class RegloChannel:
             RequestMessage
             | DeviceCommand
             | type[RequestMessage]
+            | type[GetPumpAddress]
+            | type[SetPumpAddress]
             | type[DeviceCommand]
         ),
         *args,
@@ -518,10 +539,8 @@ class RegloChannel:
         """Send a new request to the pump and read the response."""
 
         if isinstance(request, type) and issubclass(request, RequestMessage):
-            if addr is not False:
-                args = (parse_none(addr, self.addr), *args)
-
-            request = request(*args, **kwargs)
+            args = (parse_none(addr, self.addr), *args)
+            request = request(*args, addr_mode=self._addr_mode, **kwargs)
             return self.send_request(request)
 
         if self.serial is None:
@@ -533,37 +552,42 @@ class RegloChannel:
 
     # PUMP ADDRESSING
     @property
-    def pump_addr(self):
-        return self.send_request(GetPumpAddress, addr=False).addr
+    def pump_addr(self) -> PumpAddressType:
+        return self.send_request(GetPumpAddress).addr
 
     @pump_addr.setter
     def pump_addr(self, value):
+        if value is None:
+            return None
         return self.send_request(SetPumpAddress, addr=value)
 
     # 1.0 COMMUNICATIONS MANAGEMENT
     @property
     def channel_addressing(self):  # 1.1
         # NOTE: always legacy pump addr (1–8), as set by "@<pump_addr>"
-        return self.send_request(GetChannelAddressing, addr=self.pump_addr)
+        response = self.send_request(GetChannelAddressing)
+        self._addr_mode = int(response.args[0])
+        return response
 
     @channel_addressing.setter
     def channel_addressing(self, value):  # 1.2
         # NOTE: always legacy pump addr (1–8), as set by "@<pump_addr>"
-        addr = self.pump_addr
-        return self.send_request(SetChannelAddressing, value, addr=addr)
+        response = self.send_request(SetChannelAddressing, value)
+        self._addr_mode = int(value)
+        return response
 
     @property
     def event_messaging(self):  # 1.3 — pump-level
         # TODO: auto switch between addr=0 and self.addr depending on ICC
-        return self.send_request(GetEventMessaging, addr=0)
+        return self.send_request(GetEventMessaging)
 
     @event_messaging.setter
     def event_messaging(self, value):  # 1.4
-        return self.send_request(SetEventMessaging, value, addr=0)
+        return self.send_request(SetEventMessaging, value)
 
     @property
     def protocol_version(self):  # 1.5
-        return self.send_request(GetProtocolVersion, addr=0)
+        return self.send_request(GetProtocolVersion)
 
     # 2.0 PUMP DRIVE
     def start(self):  # 2.1
@@ -597,22 +621,7 @@ class RegloChannel:
 
     @mode.setter
     def mode(self, value):  # 3.2 – 3.8
-        if value == MODE_RPM:
-            return self.send_request(SetModeRPM)
-        elif value == MODE_FLOWRATE:
-            return self.send_request(SetModeFlowrate)
-        elif value == MODE_VOL_RATE:
-            return self.send_request(SetModeVolumeAtRate)
-        elif value == MODE_VOL_TIME:
-            return self.send_request(SetModeVolumeOverPeriod)
-        elif value == MODE_VOL_PAUSE:
-            return self.send_request(SetModeVolumeAtRateCycle)
-        elif value == MODE_TIME:
-            return self.send_request(SetModeRateOverPeriod)
-        elif value == MODE_TIME_PAUSE:
-            return self.send_request(SetModeRateOverPeriodCycle)
-        else:
-            return None
+        return self.send_request(SetMode, value)
 
     @property
     def rate_other(self):  # 3.9
@@ -752,18 +761,16 @@ class RegloChannel:
     # 6.0 SYSTEM
     @property
     def firmware_version(self):  # 6.1
-        return self.send_request(GetFirmwareVersion, addr=0)
+        return self.send_request(GetFirmwareVersion)
 
     def override_factory_rollervol(self, n, idx_tube, vol):  # 6.2
-        return self.send_request(
-            SetFactoryRollerVolume, n, idx_tube, vol, addr=0
-        )
+        return self.send_request(SetFactoryRollerVolume, n, idx_tube, vol)
 
     def save_rollerstep_settings(self):  # 6.3
-        return self.send_request(SaveRollerStepSetting, addr=0)
+        return self.send_request(SaveRollerStepSetting)
 
     def restore_factory_rollervol(self):  # 6.4
-        return self.send_request(RestoreFactoryRollerVolume, addr=0)
+        return self.send_request(RestoreFactoryRollerVolume)
 
     @property
     def display_name(self):
@@ -771,33 +778,33 @@ class RegloChannel:
 
     @display_name.setter
     def display_name(self, value):  # 6.5
-        response = self.send_request(SetDisplayName, value, addr=0)
+        response = self.send_request(SetDisplayName, value)
         self._display_name = SetDisplayName._types[0](value)
         return response
 
     @property
     def serial_number(self):  # 6.6
-        return self.send_request(GetPumpSerialNo, addr=0)
+        return self.send_request(GetPumpSerialNo)
 
     @serial_number.setter
     def serial_number(self, value):  # 6.7
-        return self.send_request(SetPumpSerialNo, value, addr=0)
+        return self.send_request(SetPumpSerialNo, value)
 
     @property
     def language(self):  # 6.8
-        return self.send_request(GetPumpLanguage, addr=0)
+        return self.send_request(GetPumpLanguage)
 
     @language.setter
     def language(self, value):  # 6.9
-        return self.send_request(SetPumpLanguage, value, addr=0)
+        return self.send_request(SetPumpLanguage, value)
 
     @property
     def num_channels(self):  # 6.10
-        return self.send_request(GetNumberOfChannels, addr=0)
+        return self.send_request(GetNumberOfChannels)
 
     @num_channels.setter
     def num_channels(self, value):  # 6.11
-        return self.send_request(GetNumberOfChannels, value, addr=0)
+        return self.send_request(GetNumberOfChannels, value)
 
     @property
     def num_rollers(self):  # 6.12
@@ -820,10 +827,10 @@ class RegloChannel:
         return self.send_request(GetTimePumpedSinceReset)
 
     def enable_gui(self):  # 6.17
-        return self.send_request(EnableGUI, addr=0)
+        return self.send_request(EnableGUI)
 
     def disable_gui(self):  # 6.18
-        return self.send_request(DisableGUI, addr=0)
+        return self.send_request(DisableGUI)
 
     @property
     def display_nums(self):
@@ -831,7 +838,7 @@ class RegloChannel:
 
     @display_nums.setter
     def display_nums(self, value):  # 6.19
-        response = self.send_request(SetDisplayNumbers, value, addr=0)
+        response = self.send_request(SetDisplayNumbers, value)
         self._display_nums = SetDisplayNumbers._types[0](value)
         return response
 
@@ -841,25 +848,25 @@ class RegloChannel:
 
     @display_chars.setter
     def display_chars(self, value):  # 6.20
-        response = self.send_request(SetDisplayCharacters, value, addr=0)
+        response = self.send_request(SetDisplayCharacters, value)
         self._display_chars = SetDisplayCharacters._types[0](value)
         return response
 
     @property
     def run_status(self):  # 6.21
-        return self.send_request(GetRunStatus, addr=0)
+        return self.send_request(GetRunStatus)
 
     @property
     def model_info(self):  # 6.22
-        return self.send_request(GetModelInfo, addr=0)
+        return self.send_request(GetModelInfo)
 
     @property
     def pumphead_model(self):  # 6.23
-        return self.send_request(GetPumpHeadModel, addr=0)
+        return self.send_request(GetPumpHeadModel)
 
     @pumphead_model.setter
     def pumphead_model(self):  # 6.24
-        return self.send_request(SetPumpHeadModel, addr=0)
+        return self.send_request(SetPumpHeadModel)
 
     @property
     def pumptime(self):  # 6.25
@@ -919,11 +926,11 @@ class RegloChannel:
         return self.send_request(GetTotalVolumeSinceReset)
 
     def save_pump_settings(self):  # 6.41
-        return self.send_request(SavePumpSettings, addr=0)
+        return self.send_request(SavePumpSettings)
 
     @property
     def footswitch_status(self):  # 6.42
-        return self.send_request(GetFootSwitchStatus, addr=0)
+        return self.send_request(GetFootSwitchStatus)
 
     # HELPER
     def _set_time_in_units(self, settenths, setmins, sethrs, value):
@@ -1014,7 +1021,7 @@ class RegloICC:
         pars = (self.parse_param(p) for p in (active, direction, mode, speed))
         for channel, a, d, m, s in zip(range(1, 4), *pars):
             self.set_channel(channel, a, d, m, s, from_unit)
-        pass
+        return None
 
     def set_channel(
         self,
@@ -1029,7 +1036,7 @@ class RegloICC:
         self.set_mode(channel, mode)
         self.set_speed(channel, speed, from_unit=from_unit)
         self.set_active(channel, active)
-        pass
+        return None
 
     def set_active(self, channel, active=None):
         """Activate or deactivate a channel."""

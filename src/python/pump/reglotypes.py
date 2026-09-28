@@ -1,13 +1,12 @@
 """RegloICC Datatypes"""
 
-from typing import Any
-
 from numpy import clip, format_float_scientific, uint
 
 from src.python.utils import parse_none
 
 from .constants import (
     CCW,
+    CHANNEL_ADDRESSING,
     CW,
     DIR_KEY,
     DT1_MAX,
@@ -29,8 +28,17 @@ from .constants import (
     ERR_MAX_RATE,
     ERR_MAX_VOL,
     FAILURE,
+    ICC_CHANNEL_ADDRESSED,
+    ICC_CHANNEL_PREFERRED,
+    ICC_PROXY_ADDRESSED,
+    ICC_PROXY_PREFERRED,
+    ICC_PUMP_ADDRESSED,
+    ICC_UNADDRESSED,
     ISO_LANG_KEY,
     LANG_KEY,
+    LEGACY_ADDRESSING,
+    LEGACY_DEFAULT,
+    LEGACY_PROXY,
     MODE_FLOWRATE,
     MODE_RPM,
     MODE_TIME,
@@ -48,16 +56,6 @@ from .constants import (
     TIMETYPE_MAX,
     VOLTYPE_MAX,
     VOLTYPE_MIN,
-    ICC_UNADDRESSED,
-    ICC_PUMP_ADDRESSED,
-    ICC_CHANNEL_ADDRESSED,
-    ICC_PROXY_ADDRESSED,
-    ICC_CHANNEL_PREFERRED,
-    ICC_PROXY_PREFERRED,
-    LEGACY_ADDRESSING,
-    CHANNEL_ADDRESSING,
-    LEGACY_DEFAULT,
-    LEGACY_PROXY,
 )
 
 
@@ -66,7 +64,7 @@ class RegloDataType:
         self._value = value
         self._width = uint(width)
         self.check_width()
-        pass
+        return None
 
     def __len__(self):
         return self.width
@@ -91,7 +89,7 @@ class RegloDataType:
         assert (
             len_str == self._width
         ), f"Data string must be length {self._width} — got length {len_str}!"
-        pass
+        return None
 
 
 class BooleanType(RegloDataType):
@@ -99,6 +97,12 @@ class BooleanType(RegloDataType):
 
     def __init__(self, value: bool | int = False) -> None:
         super().__init__(bool(value), width=uint(1))
+
+    def __int__(self):
+        return int(self._value)
+
+    def __bool__(self):
+        return bool(self._value)
 
     def __str__(self) -> str:
         # print("Executing BooleanType.__str__()")
@@ -157,8 +161,10 @@ class DiscreteType(RegloDataType):
         self._vmax = uint(vmax) if isinstance(vmax, int) else vmax
         if isinstance(value, (int, uint)):  # type: ignore
             value = uint(clip(value, self.vmin, self.vmax))
-        super().__init__(value, width)
-        pass
+        return super().__init__(value, width)
+
+    def __int__(self):
+        return int(self.value)
 
     def __str__(self) -> str:
         if self.value is None:
@@ -204,9 +210,6 @@ class QuantitativeDiscreteType(DiscreteType):
     ) -> None:
         self._unit_name = unit_name
         super().__init__(value, width, vmin, vmax)
-
-    def __int__(self):
-        return int(self.value)
 
     def __eq__(self, value):
         return int(self) == value
@@ -512,8 +515,7 @@ class StringType(RegloDataType):
         )
         assert isvalid_chr, err_chr
 
-        super().__init__(value, width=w)
-        pass
+        return super().__init__(value, width=w)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self._value!r})"
@@ -641,15 +643,27 @@ class UnknownType(MiscType):
 
 class ByteCodeType(CharType):
     _aliases = ("",)
+    _STANDARD_BYTECODE_TYPES = {
+        "ModeRPM",
+        "ModeFlowrate",
+        "ModeVolumeAtRate",
+        "ModeVolumeOverPeriod",
+        "ModeVolumeAtRateCycle",
+        "ModeRateOverPeriod",
+        "ModeRateOverPeriodCycle",
+        "CycleErrorType",
+        "FlowErrorType",
+        "VolumeErrorType",
+    }
 
-    def __init__(self, value, *, aliases=_aliases, desc="") -> None:
-        self._aliases = aliases
+    def __init__(self, value, *, aliases=None, desc="") -> None:
+        self._aliases = parse_none(aliases, self._aliases)
         self._desc = desc
         super().__init__(value)
 
     def __repr__(self) -> str:
         v, alias, desc = self.value, self.aliases, self.desc
-        return f"ModeType({v!r}, alias={alias!r}, desc={desc!r})"
+        return f"ByteCodeType({v!r}, alias={alias!r}, desc={desc!r})"
 
     @property
     def aliases(self):
@@ -659,14 +673,22 @@ class ByteCodeType(CharType):
     def desc(self):
         return self._desc
 
+    @classmethod
+    def from_str(cls, s):
+        bytecodetypes = (eval(sbt) for sbt in cls._STANDARD_BYTECODE_TYPES)
+        for bytecodetype in bytecodetypes:
+            if s == bytecodetype._value:
+                return bytecodetype()
+        return ByteCodeType(s)
+
 
 class StandardByteCodeType(ByteCodeType):
-    _value = "L"
-    _aliases = ("RPM",)
-    _desc = "Revolutions per minute"
+    _value = "_"
+    _aliases = ("",)
+    _desc = ""
 
     def __init__(self) -> None:
-        super().__init__(self.value, aliases=self._aliases, desc=self._desc)
+        super().__init__(self._value, aliases=self._aliases, desc=self._desc)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
@@ -815,7 +837,7 @@ class ChannelAddressType(AddressType):
 class ProxyAddressType(AddressType):
     _vmax = _vmin = 0
 
-    def __init__(self) -> None:
+    def __init__(self, *args) -> None:
         super().__init__(LEGACY_PROXY)
 
 
@@ -848,7 +870,7 @@ class UnAddressedType(AddressType):
     _vmax = _vmin = None
     _width = 0
 
-    def __init__(self) -> None:
+    def __init__(self, *args) -> None:
         super().__init__(None)
 
     def __repr__(self) -> str:

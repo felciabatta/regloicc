@@ -65,18 +65,22 @@ def parse_metadata(path, save_yaml=False):
     return yaml_str
 
 
-def get_port(com=None):
+def get_port(com=None, description=None):
     """Get a COM port from a list of available ports or string."""
-    if com is None:
-        ports = list_ports.comports()
-        if not ports:
-            raise ValueError("No COM ports found. Please connect the pump.")
+    ports = list_ports.comports()
+    if not ports:
+        raise ValueError("No COM ports found. Please connect the pump.")
 
+    if com is None and description is not None:
+        for port in ports:
+            if description in port.description:
+                return port.device
+        return get_port(com=None)  # fallback to user selection
+    elif com is None:
         print("Available COM ports:")
         for p, port in enumerate(ports):
             print(f"{p}  {port.device}: {port.description}")
         print("")
-
         p = int(input("COM port not specified. Please select a port: "))
         return ports[p].device
     elif isinstance(com, str):

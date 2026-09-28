@@ -9,6 +9,7 @@ from .constants import (
     CHANNEL_ADDRESSING,
     CR,
     CRLF,
+    EMPTY,
     EVT_CHANNEL_STOP,
     EVT_CHANNEL_UPDATE,
     EVT_ID,
@@ -148,18 +149,20 @@ from .reglotypes import (
     UnknownType,
     VolumeType1,
     VolumeType2,
+    ByteCodeType,
+    StandardByteCodeType,
 )
 
 
 class RegloMessage:
     """Abstract base class for all messages sent or received"""
 
-    _datetime = None
+    _DATETIME = None
 
-    def __init__(self, *, datetime=_datetime, **kws) -> None:
+    def __init__(self, *, datetime=_DATETIME, **kws) -> None:
         self.datetime = datetime
         self._unused_kws = kws
-        pass
+        return None
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
@@ -170,11 +173,11 @@ class RegloMessage:
 
     @property
     def datetime(self):
-        return self._datetime
+        return self._DATETIME
 
     @datetime.setter
     def datetime(self, value):
-        self._datetime = value
+        self._DATETIME = value
 
     def log_datetime(self):
         self.datetime = self.now()
@@ -225,32 +228,31 @@ class OneByteResponse(DeviceMessage):
         return cls.from_str(s, datetime=cls.now())
 
 
-class AddressResponse(OneByteResponse):
-    _addr = 1
+class PumpAddressResponse(OneByteResponse):
 
     def __init__(self, addr, **kwargs) -> None:
         self.addr = addr
         super().__init__(str(addr), **kwargs)
 
     def __repr__(self) -> str:
-        return f"AddressResponse({self.addr!r})"
+        return f"PumpAddressResponse({self.addr!r})"
 
     def __str__(self) -> str:
         return str(self.addr)
 
     @property
-    def addr(self):
+    def addr(self) -> PumpAddressType:
         return self._addr
 
     @addr.setter
     def addr(self, value):
         if isinstance(value, int):
-            value = AddressType(value)
+            value = PumpAddressType(value)
         elif isinstance(value, str) and len(value) == 1 and value.isnumeric:
-            value = AddressType(int(value))
-        elif not isinstance(value, AddressType):
+            value = PumpAddressType(int(value))
+        elif not isinstance(value, PumpAddressType):
             raise ValueError(
-                f"value {value!r} cannot be converted to AddressType"
+                f"value {value!r} cannot be converted to PumpAddressType"
             )
 
         self._addr = value
@@ -539,7 +541,7 @@ class PumpErrorResponse(DataResponse):
 
 # 3.0 OPERATIONAL MODES AND SETTINGS
 class ModeResponse(DataResponse):
-    _types = (CharType,)
+    _types = (StandardByteCodeType,)
 
 
 class RateOtherResponse(DataResponse):
@@ -735,37 +737,36 @@ class UpdateEvent(EventMessage):
 
 
 class RequestMessage(RegloMessage):
-    _RTYPES = (StatusResponse, DataResponse, AddressResponse)
+    _RTYPES = (StatusResponse, DataResponse, PumpAddressResponse)
     _addr_icctype = AddressType
-    _addr_mode = CHANNEL_ADDRESSING
 
     def __init__(
         self,
         addr=None,
         end=CRLF,
         response: (
-            None | StatusResponse | DataResponse | AddressResponse
+            None | StatusResponse | DataResponse | PumpAddressResponse
         ) = None,
         rtype: (
             None
             | type[StatusResponse]
             | type[DataResponse]
-            | type[AddressResponse]
+            | type[PumpAddressResponse]
         ) = None,
-        addr_mode=_addr_mode,
-        addr_icctype=_addr_icctype,
+        addr_mode=CHANNEL_ADDRESSING,
+        addr_icctype=None,
     ) -> None:
 
         # assert (
         #     addr is None or 0 <= addr <= 8
         # ), f"Address must be in range 0–8; got {addr}"
         self._addr_mode = addr_mode
-        self._addr_icctype = addr_icctype
+        self._addr_icctype = parse_none(addr_icctype, self._addr_icctype)
         self.addr = addr
         self._end = end
         self._response = response
         self._rtype = rtype
-        pass
+        return None
 
     def __call__(self, serial: Serial):
         return self.write(serial)
@@ -785,8 +786,17 @@ class RequestMessage(RegloMessage):
         return self._addr
 
     @addr.setter
-    def addr(self, value: int | None):
-        self._addr = self.addr_type(value)
+    def addr(self, value: int | None | AddressType):
+        # input(f"Setting self.addr to {value!r}, of type {type(value)}")
+        # input(f"self.addr_type is {self.addr_type}")
+        if type(value) is self.addr_type:
+            self._addr = value
+        elif isinstance(value, AddressType):
+            self.addr = value.value
+        elif isinstance(value, (int, type(None))):
+            self._addr = self.addr_type(value)
+        else:
+            self.addr = int(value)
 
     @property
     def addr_mode(self):
@@ -860,13 +870,13 @@ class RequestMessage(RegloMessage):
 
 class GetPumpAddress(RequestMessage):
     _end = CR
-    _rtype = AddressResponse
+    _rtype = PumpAddressResponse
     _addr_icctype = UnAddressedType
     _addr = None
 
-    def __init__(self) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         return super().__init__(
-            self._addr, end=self._end, response=None, rtype=self._rtype
+            self._addr, end=self._end, rtype=self._rtype, **kwargs
         )
 
     def __repr__(self) -> str:
@@ -879,15 +889,15 @@ class GetPumpAddress(RequestMessage):
 class SetPumpAddress(RequestMessage):
     _end = CR
     _rtype = StatusResponse
+    _addr_icctype = PumpAddressType
 
-    def __init__(self, addr: int | uint = 1) -> None:
-        assert 1 <= addr <= 8, f"Pump address must be in range 1–8; got {addr}"
+    def __init__(self, addr, **kwargs) -> None:
         return super().__init__(
-            addr, end=self._end, response=None, rtype=self._rtype
+            addr, end=self._end, rtype=self._rtype, **kwargs
         )
 
     def __repr__(self) -> str:
-        return f"SetPumpAddress({int(self.addr)})"
+        return f"SetPumpAddress({self.addr!r})"
 
     def __str__(self) -> str:
         return f"{AT}{self.addr}{self.end}"
@@ -908,18 +918,16 @@ class DeviceCommand(RequestMessage):
     }
     _types = None
 
-    def __init__(self, addr, *args, code=None, rtype=None) -> None:
+    def __init__(self, addr, *args, code=None, rtype=None, **kwargs) -> None:
         self._args = self.convert_args(*args)
         self._code = parse_none(code, self._code)
         rtype = parse_none(rtype, self._rtype)
-        return super().__init__(
-            addr, end=self._end, response=None, rtype=rtype
-        )
+        return super().__init__(addr, end=self._end, rtype=rtype, **kwargs)
 
     def __repr__(self) -> str:
         cls = type(self)
         name = cls.__name__
-        addr = str(int(self.addr))
+        addr = repr(self.addr)
         code = repr(self.code)
         args = [addr, code] if name in cls.BASE_CLASSES else [addr]
         optargs = [repr(a) for a in self.args]
@@ -935,7 +943,7 @@ class DeviceCommand(RequestMessage):
         return self._args
 
     @property
-    def code(self):
+    def code(self) -> str | ByteCodeType:
         return self._code
 
     @property
@@ -952,8 +960,8 @@ class DeviceCommand(RequestMessage):
 
 
 class ShortDeviceCommand(DeviceCommand):
-    def __init__(self, addr=0, code=None, rtype=None) -> None:
-        super().__init__(addr, code=code, rtype=rtype)
+    def __init__(self, addr, code=None, rtype=None, **kwargs) -> None:
+        super().__init__(addr, code=code, rtype=rtype, **kwargs)
 
 
 # GETTERS AND SETTERS
@@ -1142,6 +1150,33 @@ class SetModeRateOverPeriodCycle(ShortSetterCommand):  # 3.8
 
     _code = SET_MODE_RPM
     _addr_icctype = ChannelAddressType
+
+
+class SetMode(ShortSetterCommand):  # 3.2–3.8
+    """Set pump/channel to a specific mode using code as input argument."""
+
+    _addr_icctype = ChannelAddressType
+
+    def __init__(self, addr, code: str | StandardByteCodeType, **kwargs):
+        if isinstance(code, str):
+            code = StandardByteCodeType.from_str(code)
+        elif isinstance(code, type) and issubclass(code, StandardByteCodeType):
+            code = code()
+        elif isinstance(code, StandardByteCodeType):
+            code = code
+        else:
+            raise TypeError(
+                f"code must be str or StandardByteCodeType, got {type(code)}"
+            )
+        return super().__init__(addr, code=code, **kwargs)
+
+    def __repr__(self) -> str:
+        return f"SetMode({self.addr!r}, {self.code!r})"
+
+    @classmethod
+    def from_code(cls, code: str | ByteCodeType, **kwargs):
+        # TODO: implement mapping from code to SetModeXXX class
+        pass
 
 
 class GetRateOther(GetterCommand):  # 3.9
