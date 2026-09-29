@@ -124,6 +124,8 @@ from .reglotypes import (
     CharType,
     DiameterType,
     DirectionType,
+    DiscreteDiameterType,
+    DiscreteRPMType,
     DiscreteType1,
     DiscreteType2,
     DiscreteType3,
@@ -416,6 +418,12 @@ class DataMessage(DeviceMessage):
 
     def __len__(self):
         return len(self.args)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.args[key]
+        else:
+            raise KeyError("index should be int")
 
     def __str__(self) -> str:
         args = self.sep.join(str(a) for a in self.args)
@@ -954,7 +962,10 @@ class DeviceCommand(RequestMessage):
     def convert_args(cls, *args):
         types = cls._types
         if isinstance(types, (tuple, list)) and len(args) == len(types):
-            return tuple(t(arg) for (t, arg) in zip(types, args))
+            return tuple(
+                arg if isinstance(arg, t) else t(arg)
+                for (t, arg) in zip(types, args)
+            )
         else:
             return args
 
@@ -1207,7 +1218,7 @@ class GetRPM(ShortGetterCommand):  # 3.11
 class SetRPM(SetterCommand):  # 3.12
     """RPM mode flow rate setting (0.01 RPM) Discrete Type 3."""
 
-    _types = (DiscreteType3,)
+    _types = (DiscreteRPMType,)
     _code = SET_RPM
     _addr_icctype = ChannelAddressType
 
@@ -1346,7 +1357,7 @@ class GetTubeDiameter(ShortGetterCommand):  # 4.1
 class SetTubeDiameter(SetterCommand):  # 4.2
     """Set tubing inside diameter using Discrete Type 2."""
 
-    _types = (DiscreteType2,)
+    _types = (DiscreteDiameterType,)
     _code = SET_DIAMETER
     _addr_icctype = ChannelAddressType
 

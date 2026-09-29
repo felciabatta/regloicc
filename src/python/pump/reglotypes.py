@@ -198,17 +198,26 @@ class DiscreteType(RegloDataType):
 class QuantitativeDiscreteType(DiscreteType):
     """Discrete type representing measurable quantities."""
 
+    _vmin = DT_ZERO
+    _vmax = None
     _unit_name = ""
+    _unit_float = 1.0
 
     def __init__(
         self,
         value=DT_ZERO,
         width=1,
-        vmin=DT_ZERO,
+        vmin=None,
         vmax=None,
-        unit_name=_unit_name,
+        unit_float: float | None = None,
+        unit_name=None,
     ) -> None:
-        self._unit_name = unit_name
+        vmin = parse_none(vmin, self._vmin)
+        vmax = parse_none(vmax, self._vmax)
+        self._unit_name = parse_none(unit_name, self._unit_name)
+        self._unit_float = parse_none(unit_float, self._unit_float)
+        if isinstance(value, float):
+            value = round(value / self.unit_float)
         super().__init__(value, width, vmin, vmax)
 
     def __eq__(self, value):
@@ -226,8 +235,15 @@ class QuantitativeDiscreteType(DiscreteType):
     def __le__(self, other):
         return int(self) <= other
 
+    def __float__(self):
+        return int(self) * self.unit_float
+
     @property
-    def unit_name(self):
+    def unit_float(self) -> float:
+        return self._unit_float
+
+    @property
+    def unit_name(self) -> str:
         return self._unit_name
 
 
@@ -240,9 +256,11 @@ class DiscreteType1(QuantitativeDiscreteType):
     - Range: 0 to 9999
     """
 
+    _vmax = DT1_MAX
+
     def __init__(self, value=DT_ZERO) -> None:
         w = clip(len(str(value)), 1, 4)
-        super().__init__(value, width=w, vmax=DT1_MAX)
+        super().__init__(value, width=w)
 
 
 class DiscreteType2(QuantitativeDiscreteType):
@@ -255,8 +273,10 @@ class DiscreteType2(QuantitativeDiscreteType):
     - Range: 0 to 9999
     """
 
+    _vmax = DT2_MAX
+
     def __init__(self, value=DT_ZERO) -> None:
-        super().__init__(value, width=DT2_WIDTH, vmax=DT2_MAX)
+        super().__init__(value, width=DT2_WIDTH)
 
 
 class DiscreteType3(QuantitativeDiscreteType):
@@ -269,8 +289,10 @@ class DiscreteType3(QuantitativeDiscreteType):
     - Range: 0 to 999999
     """
 
+    _vmax = DT3_MAX
+
     def __init__(self, value=DT_ZERO) -> None:
-        super().__init__(value, width=DT3_WIDTH, vmax=DT3_MAX)
+        super().__init__(value, width=DT3_WIDTH)
 
 
 class DiscreteType4(QuantitativeDiscreteType):
@@ -283,8 +305,10 @@ class DiscreteType4(QuantitativeDiscreteType):
     - Range: 0 to 4294967295 (ie uint32)
     """
 
+    _vmax = DT4_MAX
+
     def __init__(self, value=DT_ZERO) -> None:
-        super().__init__(value, width=DT4_WIDTH, vmax=DT4_MAX)
+        super().__init__(value, width=DT4_WIDTH)
 
 
 class DiscreteType5(QuantitativeDiscreteType):
@@ -296,8 +320,10 @@ class DiscreteType5(QuantitativeDiscreteType):
     - Range: 0 to 999
     """
 
+    _vmax = DT5_MAX
+
     def __init__(self, value=DT_ZERO) -> None:
-        super().__init__(value, width=DT5_WIDTH, vmax=DT5_MAX)
+        super().__init__(value, width=DT5_WIDTH)
 
 
 class DiscreteType6(QuantitativeDiscreteType):
@@ -310,8 +336,37 @@ class DiscreteType6(QuantitativeDiscreteType):
     - Range: 0 to 99999
     """
 
+    _vmax = DT6_MAX
+
     def __init__(self, value=DT_ZERO) -> None:
-        super().__init__(value, width=DT6_WIDTH, vmax=DT6_MAX)
+        super().__init__(value, width=DT6_WIDTH)
+
+
+class DiscreteRPMType(DiscreteType3):
+    """RPM in DiscreteType3
+
+    - Width: 6
+    - Range: 0 to 10000
+    - Units: RPM (0.01)
+    """
+
+    _vmax = 10000
+    _unit_name = "RPM (0.01)"
+    _unit_float = 0.01
+
+
+class DiscreteDiameterType(DiscreteType2):
+    """Tube diameter in DiscreteType2
+
+    - Width: 4
+    - Range: 13 to 317
+    - Units: mm (0.01)
+    """
+
+    _vmin = 13
+    _vmax = 317
+    _unit_float = 0.01
+    _unit_name = "mm (0.01)"
 
 
 class FractionalType(RegloDataType):
@@ -359,20 +414,22 @@ class VolumeType1(RegloDataType):
 
     _width = 7
 
-    def __init__(self, value=float()) -> None:
-        # input(repr(value))
-        value = 0 if value == 0 else clip(value, VOLTYPE_MIN, VOLTYPE_MAX)
-        super().__init__(value, width=type(self)._width)
+    def __init__(self, value=float(), vmin=VOLTYPE_MIN, vmax=VOLTYPE_MAX):
+        value = 0 if value == 0 else clip(value, vmin, vmax)
+        return super().__init__(value, width=type(self)._width)
 
     def float2sci(self, x):
         s = format_float_scientific(x, precision=3, min_digits=3, exp_digits=1)
         return s.upper()
 
+    def __float__(self):
+        return float(self.value)
+
     def __str__(self) -> str:
-        return self.float2sci(self._value).replace(".", "")
+        return self.float2sci(self.value).replace(".", "")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.float2sci(self._value)})"
+        return f"{type(self).__name__}({self.float2sci(self.value)})"
 
     @classmethod
     def from_str(cls, s):
@@ -418,23 +475,21 @@ class TimeType(QuantitativeDiscreteType):
         Number of seconds represented by one integer unit.
     """
 
+    _vmax = TIMETYPE_MAX
     _unit_name = "s"
+    _unit_float = 1.0
 
     def __init__(
-        self, value=uint(), width=1, unit=1.0, unit_name=_unit_name
+        self, value=uint(), width=1, unit_float=None, unit_name=None
     ) -> None:
-        self._unit = unit  # seconds
+        self._unit_float = unit_float  # seconds
         super().__init__(
-            value, width=width, vmax=TIMETYPE_MAX, unit_name=unit_name
+            value, width=width, unit_float=unit_float, unit_name=unit_name
         )
 
     @property
-    def unit(self):
-        return self._unit
-
-    @property
     def seconds(self):
-        return float(self._value * self._unit)
+        return float(self._value * self._unit_float)
 
     @property
     def minutes(self):
@@ -449,7 +504,7 @@ class TimeType(QuantitativeDiscreteType):
         width_arg = (
             f", width={self._width}" if (name == TimeType.__name__) else ""
         )
-        return f"{name}({self._value}{width_arg}, unit={self.unit})"
+        return f"{name}({self._value}{width_arg}, unit={self.unit_float})"
 
 
 class TimeType1(TimeType):
@@ -463,11 +518,12 @@ class TimeType1(TimeType):
     - Range: 0 to 35,964,000 (0 to 999 hr)
     """
 
-    _unit_name = "s/10"
+    _unit_name = "s (0.1)"
+    _unit_float = 0.1
 
-    def __init__(self, value=DT_ZERO, unit=0.1) -> None:
+    def __init__(self, value=DT_ZERO) -> None:
         w = clip(len(str(value)), 1, 8)
-        super().__init__(value, width=w, unit=unit)
+        super().__init__(value, width=w)
 
 
 class TimeType2(TimeType):
@@ -482,10 +538,11 @@ class TimeType2(TimeType):
     - Range: 0 to 35,964,000 (0 to 999 hr)
     """
 
-    _unit_name = "s/10"
+    _unit_name = "s (0.1)"
+    _unit_float = 0.1
 
-    def __init__(self, value=DT_ZERO, unit=0.1) -> None:
-        super().__init__(value, width=8, unit=unit)
+    def __init__(self, value=DT_ZERO) -> None:
+        super().__init__(value, width=8)
 
 
 class StringType(RegloDataType):

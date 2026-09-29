@@ -40,9 +40,10 @@ import time
 
 from pandas import DataFrame
 from pandas import concat as pdcat
+from rich.progress import Progress
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
 
-from ..utils import flux2mmmmse, get_port, parse_none
+from ..utils import flux2mmmmse, get_port, parse_none, timer
 from .constants import (
     AT,
     CARET,
@@ -220,7 +221,6 @@ from .constants import (
     VOLTYPE_MIN,
 )
 from .messages import (
-    PumpAddressResponse,
     BackstepsResponse,
     CalActualVolumeResponse,
     CalDirectionResponse,
@@ -304,6 +304,7 @@ from .messages import (
     PausePump,
     PositiveResponse,
     ProtocolVersionResponse,
+    PumpAddressResponse,
     PumpErrorResponse,
     PumpHeadModelResponse,
     PumpLanguageResponse,
@@ -385,6 +386,7 @@ from .messages import (
 from .reglotypes import (
     AddressType,
     BooleanType,
+    ByteCodeType,
     ChannelAddressType,
     CharType,
     ClockwiseType,
@@ -403,10 +405,18 @@ from .reglotypes import (
     LanguageType,
     MiscType,
     MissingType,
+    ModeFlowrate,
+    ModeRateOverPeriod,
+    ModeRateOverPeriodCycle,
+    ModeRPM,
+    ModeVolumeAtRate,
+    ModeVolumeAtRateCycle,
+    ModeVolumeOverPeriod,
     NegativeType,
     PositiveType,
     PumpAddressType,
     RegloDataType,
+    StandardByteCodeType,
     StatusType,
     StringType,
     SuccessType,
@@ -416,15 +426,6 @@ from .reglotypes import (
     UnknownType,
     VolumeType1,
     VolumeType2,
-    ByteCodeType,
-    StandardByteCodeType,
-    ModeRPM,
-    ModeFlowrate,
-    ModeVolumeAtRate,
-    ModeVolumeOverPeriod,
-    ModeVolumeAtRateCycle,
-    ModeRateOverPeriod,
-    ModeRateOverPeriodCycle,
 )
 
 
@@ -441,6 +442,7 @@ class RegloDevice:
         tube_diameter=0.51,
         display_message="we be pumpin'",
         mode=ModeFlowrate(),
+        flowrate_limit=0.5,
     ) -> None:
         # Open serial port with data format corresponding to the RegloICC pump
         self.serial = serial
@@ -455,6 +457,7 @@ class RegloDevice:
         )
         self.verbose = verbose
         self._current_request = None
+        self._flowrate_limit = flowrate_limit
 
         self.addr = addr
         self.pump_addr = pump_addr
@@ -550,6 +553,10 @@ class RegloDevice:
         self.current_request = request
         return request.response
 
+    @property
+    def flowrate_limit(self):
+        return self._flowrate_limit
+
     # PUMP ADDRESSING
     @property
     def pump_addr(self) -> PumpAddressType:
@@ -641,10 +648,19 @@ class RegloDevice:
 
     @property
     def flowrate(self):  # 3.13
-        return self.send_request(GetFlowrate)
+        response = self.send_request(GetFlowrate)
+        return float(response[0])
 
     @flowrate.setter
     def flowrate(self, value):  # 3.14
+        if value > self.flowrate_limit:
+            print(
+                f"Warning: requested flowrate {value} mL/min exceeds limit — "
+                f"rate will be capped at {self.flowrate_limit} mL/min.\n\n"
+                "To use a higher flowrate, increase flowrate_limit."
+            )
+        vmax = min(self.flowrate_limit, self.maxflowrate_calibrated)
+        value = VolumeType2(value, vmax=vmax)
         return self.send_request(SetFlowrate, value)
 
     @property
@@ -681,11 +697,13 @@ class RegloDevice:
 
     @property
     def maxflowrate(self):  # 3.23
-        return self.send_request(GetMaxFlowrate)
+        response = self.send_request(GetMaxFlowrate)
+        return float(response[0])
 
     @property
     def maxflowrate_calibrated(self):  # 3.24
-        return self.send_request(GetMaxFlowrateCalibrated)
+        response = self.send_request(GetMaxFlowrateCalibrated)
+        return float(response[0])
 
     def flowrate2dsptime(self, volume, flowrate):  # 3.25
         return self.send_request(GetDispenseTimeByFlowrate, volume, flowrate)
@@ -757,6 +775,48 @@ class RegloDevice:
 
     def cancel_calibration(self):  # 5.10
         return self.send_request(CancelCalibration)
+
+    def calibrate(self, target=None, duration=None, direction=None):  # 5.2–10
+        if target is not None:
+            self.cal_targetvol = target
+        if duration is not None:
+            self.cal_duration = duration
+        if direction is not None:
+            self.cal_direction = direction
+
+        target = float(self.cal_targetvol[0])
+        duration = int(self.cal_duration[0])
+        direction = self.direction[0]
+
+        proceed = input(
+            f"Calibration requested for channel {self.addr!s} with:\n"
+            f"– Target Volume = {target} mL\n"
+            f"– Duration      = {duration*0.1} s\n"
+            f"– Direction     = {direction!r}\n\n"
+            "Do you wish to proceed?  y/[n]  "
+        )
+        if proceed.lower() != "y":
+            return None
+
+        response = self.send_request(StartCalibration)
+
+        if isinstance(response, SuccessResponse):
+            n = duration + 50
+            timer_complete = timer(
+                n,
+                0.1,
+                description=f"Calibrating channel {self.addr}...",
+                interrupt_message="calibration cancelled by user",
+            )
+            if not timer_complete:
+                return self.cancel_calibration()
+
+            actual = input(
+                f"Target volume was {target} mL, "
+                "please measure and enter actual volume or mass (grams): "
+            )
+            self.cal_actualvol = float(actual)
+        return response
 
     # 6.0 SYSTEM
     @property
