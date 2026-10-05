@@ -657,7 +657,7 @@ class RegloDevice:
             print(
                 f"Warning: requested flowrate {value} mL/min exceeds limit — "
                 f"rate will be capped at {self.flowrate_limit} mL/min.\n\n"
-                "To use a higher flowrate, increase flowrate_limit."
+                "To use a higher flowrate, increase flowrate_limit.\n"
             )
         vmax = min(self.flowrate_limit, self.maxflowrate_calibrated)
         value = VolumeType2(value, vmax=vmax)
