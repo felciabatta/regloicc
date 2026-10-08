@@ -175,11 +175,11 @@ class RegloMessage:
 
     @property
     def datetime(self):
-        return self._DATETIME
+        return self._datetime
 
     @datetime.setter
     def datetime(self, value):
-        self._DATETIME = value
+        self._datetime = value
 
     def log_datetime(self):
         self.datetime = self.now()

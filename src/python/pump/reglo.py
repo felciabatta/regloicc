@@ -490,7 +490,6 @@ class RegloDevice:
             )
 
         self._serial = serial
-        return self._serial
 
     @property
     def current_request(self):
