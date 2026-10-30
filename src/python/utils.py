@@ -3,12 +3,10 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from time import sleep
 
 import xmltodict
 import yaml
 from numpy import sign
-from rich.progress import Progress
 from serial.tools import list_ports
 
 DIR_DEFAULT = "~/Desktop/MM-Images"
@@ -120,27 +118,3 @@ def flux2mmmmse(flowrate, from_unit="mL/min"):
     mmmm = int(min(round(flow_scaled), 9999))
 
     return (mmmm, "-" if s == -1 else "+", e)
-
-
-def timer(
-    duration: int | float,
-    step_seconds=1.0,
-    description="Processing...",
-    interrupt_message="process cancelled by user",
-):
-    duration = (
-        round(duration / step_seconds)
-        if isinstance(duration, float)
-        else duration
-    )
-    try:
-        with Progress() as p:
-            n = int(duration)
-            task = p.add_task(description, total=n)
-            while not p.finished:
-                p.update(task, advance=1, refresh=True)
-                sleep(step_seconds)
-    except KeyboardInterrupt:
-        print(f"\nKeyboardInterrupt: {interrupt_message}\n")
-        return False
-    return True
