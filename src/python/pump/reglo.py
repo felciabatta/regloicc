@@ -40,10 +40,9 @@ import time
 
 from pandas import DataFrame
 from pandas import concat as pdcat
-from rich.progress import Progress
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
 
-from ..utils import flux2mmmmse, get_port, parse_none, timer
+from ..utils import flux2mmmmse, get_port, parse_none, progress_timer
 from .constants import (
     AT,
     CARET,
@@ -435,7 +434,7 @@ class RegloDevice:
 
     def __init__(
         self,
-        addr: ChannelAddressType = ChannelAddressType(),
+        addr: ChannelAddressType | int = ChannelAddressType(),
         serial: None | str | Serial = _serial,
         pump_addr: PumpAddressType | None = None,
         verbose=True,
@@ -459,11 +458,12 @@ class RegloDevice:
         self._current_request = None
         self._flowrate_limit = flowrate_limit
 
-        self.addr = addr
+        self.addr = ChannelAddressType(addr) if isinstance(addr, int) else addr
         self.pump_addr = pump_addr
         self.channel_addressing = self._addr_mode
         self.tube_diameter = round(tube_diameter * 100)
         self.display_nums = display_message
+        self.mode = mode
         self.stop()
 
         return None
@@ -801,7 +801,7 @@ class RegloDevice:
 
         if isinstance(response, SuccessResponse):
             n = duration + 50
-            timer_complete = timer(
+            timer_complete = progress_timer(
                 n,
                 0.1,
                 description=f"Calibrating channel {self.addr}...",
