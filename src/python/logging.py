@@ -33,9 +33,23 @@ class CSVLogger:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def write(self, record):
-        if self.writer is not None:
+    @property
+    def writer_active(self):
+        return self.writer is not None
+
+    @property
+    def n_fields(self):
+        return len(self.fieldnames)
+
+    def write(self, *args, **kwargs):
+        record = dict() if not args else args[0]
+        record |= kwargs
+        if len(record) == self.n_fields and self.writer_active:
             return self.writer.writerow(record)
+        else:
+            raise ValueError(
+                f"Incorrect number of fields supplied ({len(record)})"
+            )
 
     def flush(self):
         if self.file is not None:
@@ -45,6 +59,7 @@ class CSVLogger:
         if self.file is not None:
             self.file.close()
             self.file = None
+            self.writer = None
 
 
 def log_fluorescence(
