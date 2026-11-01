@@ -60,6 +60,16 @@ from .constants import (
 
 
 class RegloDataType:
+    """Parent of all datatypes in the Reglo ICC Serial Command protocol.
+
+    Note
+    ----
+    This heirarchy includes both explicitly documented datatypes and
+    various other datetypes implictly used in the protocol.
+    Some corrections have been made, as official documentation differs
+    occassionally from actual device behaviour.
+    """
+
     def __init__(self, value, width) -> None:
         self._value = value
         self._width = uint(width)
@@ -93,7 +103,7 @@ class RegloDataType:
 
 
 class BooleanType(RegloDataType):
-    """A single character indicating True or False."""
+    """A single character indicating True or False; a RegloDataType."""
 
     def __init__(self, value: bool | int = False) -> None:
         super().__init__(bool(value), width=uint(1))
@@ -117,7 +127,7 @@ class BooleanType(RegloDataType):
 
 
 class DirectionType(RegloDataType):
-    """A single character indicating direction."""
+    """A single character indicating direction; a RegloDataType."""
 
     def __init__(self, value: str | int = CCW) -> None:
         # value = value.upper() if isinstance(value, str) else value
@@ -140,16 +150,22 @@ class DirectionType(RegloDataType):
 
 
 class CounterClockwiseType(DirectionType):
+    """Counterclockwise direction code; a RegloDataType"""
+
     def __init__(self) -> None:
         super().__init__(CCW)
 
 
 class ClockwiseType(DirectionType):
+    """Clockwise direction code; a RegloDataType"""
+
     def __init__(self) -> None:
         super().__init__(CW)
 
 
 class DiscreteType(RegloDataType):
+    """Parent of all discrete data types; a RegloDataType."""
+
     def __init__(
         self,
         value: uint | int | None = DT_ZERO,
@@ -196,7 +212,7 @@ class DiscreteType(RegloDataType):
 
 
 class QuantitativeDiscreteType(DiscreteType):
-    """Discrete type representing measurable quantities."""
+    """Discrete type representing measurable quantities; a RegloDataType."""
 
     _vmin = DT_ZERO
     _vmax = None
@@ -546,7 +562,7 @@ class TimeType2(TimeType):
 
 
 class StringType(RegloDataType):
-    """String of length 0 to 64 characters.
+    """String of length 0 to 64 characters; a RegloDataType.
 
     The string is delimited by the delimiting character of the message type
      that it is contained in.
@@ -583,6 +599,8 @@ class StringType(RegloDataType):
 
 
 class CharType(StringType):
+    """Single character string; a RegloDataType."""
+
     def __init__(self, value) -> None:
         w = len(value)
         assert w == 1, "CharType must be a single character"
@@ -590,6 +608,8 @@ class CharType(StringType):
 
 
 class StatusType(CharType):
+    """Single-character status code; a RegloDataType."""
+
     def __init__(self, value, *, desc="") -> None:
         self._desc = desc
         assert value in STATUS_CHARS, f"value must be one of {STATUS_CHARS}"
@@ -636,18 +656,26 @@ class StandardStatusType(StatusType):
 
 
 class SuccessType(StandardStatusType):
+    """Success status code; a RegloDataType."""
+
     _value = SUCCESS
 
 
 class FailureType(StandardStatusType):
+    """Failure status code; a RegloDataType."""
+
     _value = FAILURE
 
 
 class NegativeType(StandardStatusType):
+    """Negative status code; a RegloDataType."""
+
     _value = NEGATIVE
 
 
 class PositiveType(StandardStatusType):
+    """Positive status code; a RegloDataType."""
+
     _value = POSITIVE
 
 
@@ -699,6 +727,8 @@ class UnknownType(MiscType):
 
 
 class ByteCodeType(CharType):
+    """Single-character code; a RegloDataType."""
+
     _aliases = ("",)
     _STANDARD_BYTECODE_TYPES = {
         "ModeRPM",
@@ -752,30 +782,40 @@ class StandardByteCodeType(ByteCodeType):
 
 
 class ModeRPM(StandardByteCodeType):
+    """Code for RPM pump mode; a RegloDataType"""
+
     _value = MODE_RPM
     _aliases = ("RPM",)
     _desc = "Dispense at a fixed rate, in revolutions per minute"
 
 
 class ModeFlowrate(StandardByteCodeType):
+    """Code for flowrate pump mode; a RegloDataType"""
+
     _value = MODE_FLOWRATE
     _aliases = ("Flow Rate", "Flowrate")
     _desc = "Dispense at a fixed rate, in mL per minute"
 
 
 class ModeVolumeAtRate(StandardByteCodeType):
+    """Code for volume-at-rate pump mode; a RegloDataType"""
+
     _value = MODE_VOL_RATE
     _aliases = ("Volume (at Rate)", "Volume at rate")
     _desc = "Dispense a fixed volume at a preset flowrate/RPM"
 
 
 class ModeVolumeOverPeriod(StandardByteCodeType):
+    """Code for volume-over-period pump mode; a RegloDataType"""
+
     _value = MODE_VOL_TIME
     _aliases = ("Volume (over Time)", "Volume over period")
     _desc = "Dispense a fixed volume over a preset period"
 
 
 class ModeVolumeAtRateCycle(StandardByteCodeType):
+    """Code for volume-at-rate pump-cycle mode; a RegloDataType"""
+
     _value = MODE_VOL_PAUSE
     _aliases = ("Volume+Pause", "Volume at rate (cycle)")
     _desc = (
@@ -785,12 +825,16 @@ class ModeVolumeAtRateCycle(StandardByteCodeType):
 
 
 class ModeRateOverPeriod(StandardByteCodeType):
+    """Code for rate-over-period pump mode; a RegloDataType"""
+
     _value = MODE_TIME
     _aliases = ("Time", "Time (at Rate)", "Rate over period")
     _desc = "Dispense over a fixed period at a preset flowrate/RPM"
 
 
 class ModeRateOverPeriodCycle(StandardByteCodeType):
+    """Code for rate-over-period pump-cycle mode; a RegloDataType"""
+
     _value = MODE_TIME_PAUSE
     _aliases = ("Time+Pause", "Rate over period (cycle)")
     _desc = (
@@ -800,18 +844,24 @@ class ModeRateOverPeriodCycle(StandardByteCodeType):
 
 
 class CycleErrorType(StandardByteCodeType):
+    """Cycle-count error code; a RegloDataType"""
+
     _value = ERR_CYCLE_ZERO
     _aliases = (ERR_CYCLE_ZERO, "Cycle error")
     _desc = "Cycle count of 0"
 
 
 class FlowErrorType(StandardByteCodeType):
+    """Flow error code; a RegloDataType"""
+
     _value = ERR_MAX_RATE
     _aliases = (ERR_MAX_RATE, "Flowrate error")
     _desc = "Max flow rate exceeded or flow rate is set to 0"
 
 
 class VolumeErrorType(StandardByteCodeType):
+    """Volume-exeeded error code; a RegloDataType"""
+
     _value = ERR_MAX_VOL
     _aliases = (ERR_MAX_VOL, "Volume error")
     _desc = "Max volume exceeded"
