@@ -6,9 +6,45 @@ import time
 from datetime import datetime, timedelta
 
 from keras import backend as K
-
 from moma import MoMaAnalysis
 from utils import get_img_name, get_next_log_filename
+
+
+class CSVLogger:
+    """Write structured records to a CSV file."""
+
+    def __init__(self, path, fieldnames):
+        self.path = path
+        self.fieldnames = fieldnames
+
+        self.file = None
+        self.writer: csv.DictWriter | None = None
+
+    def __enter__(self):
+        self.file = open(self.path, "x", newline="")
+
+        self.writer = csv.DictWriter(self.file, fieldnames=self.fieldnames)
+
+        self.writer.writeheader()
+        self.file.flush()
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def write(self, record):
+        if self.writer is not None:
+            return self.writer.writerow(record)
+
+    def flush(self):
+        if self.file is not None:
+            return self.file.flush()
+
+    def close(self):
+        if self.file is not None:
+            self.file.close()
+            self.file = None
 
 
 def log_fluorescence(
