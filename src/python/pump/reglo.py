@@ -31,17 +31,26 @@ print('end')
 References
 ----------
 
-- [Original Code](https://blog.darwin-microfluidics.com/how-to-control-the-reglo-icc-pump-using-python-and-matlab/#protocol)
-- [Manual](https://digitalassets.avantorsciences.com/adaptivemedia/rendition?id=17a108781e743ebcc52b17648b4016c56e87bc94&vid=64b21a6c8bfebf1fd2cafd071229d6e0939145eb&prid=original&clid=SAPDAM)
-- [Product Page](https://www.avantorsciences.com/us/en/product/39213403/masterflex-ismatec-reglo-independent-channel-control-icc-peristaltic-pumps-avantor)
+- [Original Code](
+  https://blog.darwin-microfluidics.com/how-to-control-the-reglo-icc-pump-using-python-and-matlab/#protocol
+  )
+- [Manual](
+  https://digitalassets.avantorsciences.com/adaptivemedia/rendition?id=17a108781e743ebcc52b17648b4016c56e87bc94&vid=64b21a6c8bfebf1fd2cafd071229d6e0939145eb&prid=original&clid=SAPDAM
+  )
+- [Product Page](
+  https://www.avantorsciences.com/us/en/product/39213403/masterflex-ismatec-reglo-independent-channel-control-icc-peristaltic-pumps-avantor
+  )
 """
 
+from pathlib import Path
 import time
 
 from pandas import DataFrame
 from pandas import concat as pdcat
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
 
+from ..logging import CSVLogger
+from ..timer import Timer
 from ..utils import flux2mmmmse, get_port, parse_none, progress_timer
 from .constants import (
     AT,
@@ -429,6 +438,11 @@ from .reglotypes import (
 
 
 class RegloDevice:
+    """Interface for controlling a Reglo ICC Peristaltic Pump.
+
+    :param outdir: Directory where any output files are written to.
+    """
+
     _serial = None
     _addr_mode = CHANNEL_ADDRESSING
 
@@ -442,6 +456,8 @@ class RegloDevice:
         display_message="we be pumpin'",
         mode=ModeFlowrate(),
         flowrate_limit=0.5,
+        outdir: str | Path = Path("./output"),
+        timer: Timer | None = None,
     ) -> None:
         # Open serial port with data format corresponding to the RegloICC pump
         self.serial = serial
@@ -465,11 +481,21 @@ class RegloDevice:
         self.display_nums = display_message
         self.mode = mode
         self.stop()
-
-        return None
+        self.timer = timer
+        self.logger: CSVLogger = CSVLogger(
+            Path(outdir) / "pump.csv",
+            ["elapsed", "datetime", "origin", "message", "serial"],
+        )
 
     def __repr__(self) -> str:
         return f"RegloChannel({self.addr, self.serial})"
+
+    def __enter__(self):
+        self.logger.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.logger.__exit__(exc_type, exc_val, exc_tb)
 
     @property
     def serial(self):
@@ -499,19 +525,18 @@ class RegloDevice:
     def current_request(self, value: RequestMessage | DeviceCommand):
         self.update_log(value)
         self._current_request = value
-        return self.current_request
 
     @property
     def current_response(self):
-        if self.current_request is None:
-            return None
-        return self.current_request.response
+        if self.current_request is not None:
+            return self.current_request.response
 
     @property
     def log(self):
         return self._log
 
     def update_log(self, request: RequestMessage):
+        # PANDAS LOG
         row_new = dict(
             datetime=[request.datetime],
             request_desc=[repr(request)],
@@ -522,7 +547,30 @@ class RegloDevice:
         self._log = pdcat([self._log, DataFrame(row_new)], ignore_index=True)
         if self.verbose:
             print(self.log.iloc[-1:])
+
+        # CSV WRITER LOG
+        if self.logger.writer_active:
+            response = request.response
+            self.logger.write(
+                elapsed=request.elapsed,
+                datetime=request.datetime,
+                origin="request",
+                message=repr(request),
+                serial=str(request),
+            )
+            self.logger.write(
+                elapsed=response.elapsed,
+                datetime=response.datetime,
+                origin="reponse",
+                message=repr(response),
+                serial=str(response),
+            )
+
         return self.log
+
+    @property
+    def logpath(self):
+        return self.logger.path
 
     def send_request(
         self,
@@ -542,14 +590,16 @@ class RegloDevice:
 
         if isinstance(request, type) and issubclass(request, RequestMessage):
             args = (parse_none(addr, self.addr), *args)
-            request = request(*args, addr_mode=self._addr_mode, **kwargs)
+            request = request(
+                *args, addr_mode=self._addr_mode, timer=self.timer, **kwargs
+            )
             return self.send_request(request)
 
         if self.serial is None:
             return None
 
         request(self.serial)
-        self.current_request = request
+        self.current_request = request  # also updates log(s)
         return request.response
 
     @property

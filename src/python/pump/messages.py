@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from numpy import uint
 from serial import Serial
 
+from ..timer import Timer
 from ..utils import parse_none
 from .constants import (
     AT,
@@ -159,31 +159,30 @@ from .reglotypes import (
 class RegloMessage:
     """Abstract base class for all messages sent or received"""
 
-    _DATETIME = None
-
-    def __init__(self, *, datetime=_DATETIME, **kws) -> None:
-        self.datetime = datetime
+    def __init__(self, *, timer: Timer | None = None, **kws):
+        self.timer = timer
+        self.log_time()
         self._unused_kws = kws
-        return None
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
-
-    @classmethod
-    def now(cls):
-        return datetime.now().astimezone()
 
     @property
     def datetime(self):
         return self._datetime
 
-    @datetime.setter
-    def datetime(self, value):
-        self._datetime = value
+    @property
+    def elapsed(self):
+        return self._elapsed
 
-    def log_datetime(self):
-        self.datetime = self.now()
-        return self.datetime
+    def log_time(self):
+        self._datetime = self.now()
+        tim = self.timer
+        self._elapsed = None if tim is None else tim.elapsed
+
+    @classmethod
+    def now(cls):
+        return datetime.now().astimezone()
 
 
 class DeviceMessage(RegloMessage):
@@ -225,9 +224,9 @@ class OneByteResponse(DeviceMessage):
         return cls(s, **kwargs)
 
     @classmethod
-    def read(cls, serial: Serial):
+    def read(cls, serial: Serial, **kwargs):
         s = serial.read(ONEBYTE).decode()
-        return cls.from_str(s, datetime=cls.now())
+        return cls.from_str(s, **kwargs)
 
 
 class PumpAddressResponse(OneByteResponse):
@@ -487,7 +486,7 @@ class DataMessage(DeviceMessage):
         END = kwargs["end"] if "end" in kwargs else cls._END
         expected = parse_none(expected, END)
         s = serial.read_until(expected.encode("ascii")).decode()
-        return cls.from_str(s, *args, datetime=cls.now(), **kwargs)
+        return cls.from_str(s, *args, **kwargs)
 
 
 class DataResponse(DataMessage):
@@ -732,8 +731,8 @@ class EventMessage(DataMessage):
         return cls_args, dict(code=code)
 
     @classmethod
-    def read(cls, serial: Serial):
-        return super().read(serial, cls._expected)
+    def read(cls, serial: Serial, **kwargs):
+        return super().read(serial, cls._expected, **kwargs)
 
 
 class StoppingEvent(EventMessage):
@@ -763,6 +762,7 @@ class RequestMessage(RegloMessage):
         ) = None,
         addr_mode=CHANNEL_ADDRESSING,
         addr_icctype=None,
+        timer: Timer | None = None,
     ) -> None:
 
         # assert (
@@ -774,7 +774,7 @@ class RequestMessage(RegloMessage):
         self._end = end
         self._response = response
         self._rtype = rtype
-        return None
+        super().__init__(timer=timer)
 
     def __call__(self, serial: Serial):
         return self.write(serial)
@@ -838,9 +838,9 @@ class RequestMessage(RegloMessage):
         elif self.rtype is type(None):
             value = None
         elif isinstance(value, str) and issubclass(self.rcls, self._RTYPES):
-            value = self.rcls.from_str(value)
+            value = self.rcls.from_str(value, self.timer)
         elif isinstance(value, Serial) and issubclass(self.rcls, self._RTYPES):
-            value = self.rcls.read(value)
+            value = self.rcls.read(value, self.timer)
         else:
             raise ValueError(
                 "response must be str, StatusResponse or DataResponse, "
@@ -848,31 +848,35 @@ class RequestMessage(RegloMessage):
             )
 
         self._response = value
-        return self.response
 
     @property
     def rtype(self):
+        """Response message type."""
         return parse_none(self._rtype, type(self._response))
 
     @property
     def rcls(self):
+        """Alias for rtype."""
         return self.rtype
 
     @property
     def encoded(self):
+        """Encoded request string."""
         return self.encode()
 
     def encode(self):
+        """Encode the request string."""
         return str(self).encode()
 
     def write(self, serial: Serial):
+        """Write the request message to serial stream."""
         bytes_written = serial.write(self.encoded)
         if bytes_written != len(self.encoded):
             raise RuntimeError("Command was not fully written")
-        self.log_datetime()
+        self.log_time()  # log clock and elapsed times
         serial.flush()  # wait to finish transmission
 
-        self.response = serial
+        self.response = serial  # log_time is called automatically
         return self.response
 
 
@@ -1014,7 +1018,9 @@ class VerboseSetterCommand(DeviceCommand):
 
 # 1.0 COMMUNICATIONS MANAGEMENT
 class GetChannelAddressing(ShortGetterCommand):  # 1.1
-    """Get an integer representing whether (1) or not (0) channel addressing is enabled."""
+    """Get an integer representing whether (1) or not (0) channel addressing
+    is enabled.
+    """
 
     _rtype = ChannelAddressingResponse
     _code = GET_CHN_ADR
@@ -1030,7 +1036,9 @@ class SetChannelAddressing(SetterCommand):  # 1.2
 
 
 class GetEventMessaging(ShortGetterCommand):  # 1.3
-    """Get an integer representing whether (1) or not (0) event messages are enabled."""
+    """Get an integer representing whether (1) or not (0) event messages are
+    enabled.
+    """
 
     _rtype = EventMessagingResponse
     _code = GET_EVT_MSG
@@ -1098,7 +1106,9 @@ class SetCounterClockwise(ShortSetterCommand):  # 2.6
 
 
 class GetPumpError(ShortGetterCommand):  # 2.7
-    """Cause of `-` cannot run response = Parameter #1, Limiting value that was exceeded = Parameter #2."""
+    """Cause of `-` cannot run response = Parameter #1, Limiting value that
+    was exceeded = Parameter #2.
+    """
 
     _rtype = PumpErrorResponse
     _code = GET_DRIVE_ERR
@@ -1191,7 +1201,9 @@ class SetMode(ShortSetterCommand):  # 3.2–3.8
 
 
 class GetRateOther(GetterCommand):  # 3.9
-    """Get flow rate from RPM (S) or flow rate (f) when mode is not RPM or flow rate."""
+    """Get flow rate from RPM (S) or flow rate (f) when mode is not RPM or
+    flow rate.
+    """
 
     _types = (BooleanType,)
     _rtype = RateOtherResponse
@@ -1347,7 +1359,9 @@ class GetDispenseTimeByRPM(GetterCommand):  # 3.26
 
 # 4.0 CONFIGURATION
 class GetTubeDiameter(ShortGetterCommand):  # 4.1
-    """Get the current tubing inside diameter in mm. 2 decimal places are returned."""
+    """Get the current tubing inside diameter in mm.
+    2 decimal places are returned.
+    """
 
     _rtype = TubeDiameterResponse
     _code = GET_DIAMETER
@@ -1476,7 +1490,8 @@ class GetFirmwareVersion(ShortGetterCommand):  # 6.1
 
 
 class SetFactoryRollerVolume(SetterCommand):  # 6.2
-    """Change factory roller step volume for a particular roller count and tubing size.
+    """Change factory roller step volume for a particular roller count and
+    tubing size.
 
     - roller count (6, 8, 12), Discrete Type 1
     - index of the tubing diameter (see Table 1), Discrete Type 1
@@ -1656,8 +1671,9 @@ class GetModelInfo(ShortGetterCommand):  # 6.22
      The version of software currently running in the pump.
     - Pump head model type code:
      A code describing the type of pump head installed.
-     The first digit represents the number of channels for the pump, and the second 2 digits represent the number of rollers.
-     XX if channels do not have the same number of rollers.
+     The first digit represents the number of channels for the pump, and
+     the second 2 digits represent the number of rollers.
+     `"XX"` if channels do not have the same number of rollers.
     """
 
     _rtype = ModelInfoResponse
@@ -1708,7 +1724,9 @@ class GetDispenseTimeTenths(ShortGetterCommand):  # 6.25
 
 
 class SetDispenseTimeTenths(SetterCommand):  # 6.26
-    """Set the current setting for pump time in 1/10 second. Discrete Type 2."""
+    """Set the current setting for pump time in 1/10 second.
+    Discrete Type 2.
+    """
 
     # NOTE: distinguish from SetDispensePeriod?
     # - same, but different input format
@@ -1718,7 +1736,9 @@ class SetDispenseTimeTenths(SetterCommand):  # 6.26
 
 
 class SetDispenseTimeMins(SetterCommand):  # 6.27
-    """Set the current run time setting for dispensing in minutes. Discrete Type 5."""
+    """Set the current run time setting for dispensing in minutes.
+    Discrete Type 5.
+    """
 
     # NOTE: distinguish from SetDispensePeriod?
     _types = (DiscreteType5,)
@@ -1727,7 +1747,9 @@ class SetDispenseTimeMins(SetterCommand):  # 6.27
 
 
 class SetDispenseTimeHrs(SetterCommand):  # 6.28
-    """Set the current run time setting for dispensing in hours. Discrete Type 5."""
+    """Set the current run time setting for dispensing in hours.
+    Discrete Type 5.
+    """
 
     # NOTE: distinguish from SetDispensePeriod?
     _types = (DiscreteType5,)
@@ -1798,7 +1820,9 @@ class SetCalRollerVolume(SetterCommand):  # 6.34
 
 
 class ResetCalibrationData(ShortSetterCommand):  # 6.35
-    """Reset the pump to discard calibration data, use default roller step volume."""
+    """Reset the pump to discard calibration data, use default roller step
+    volume.
+    """
 
     # NOTE: distinguish from ResetConfigData
     # - config is for tube diameter and backsteps
@@ -1818,7 +1842,9 @@ class GetCyclePauseTimeTenths(ShortGetterCommand):  # 6.36
 
 
 class SetCyclePauseTimeTenths(SetterCommand):  # 6.37
-    """Set the current setting for pause time in 1/10 second. Discrete Type 2."""
+    """Set the current setting for pause time in 1/10 second.
+    Discrete Type 2.
+    """
 
     # NOTE: distinguish from SetCyclePauseTime?
     # - same, but different input format
@@ -1846,7 +1872,9 @@ class SetCyclePauseTimeHrs(SetterCommand):  # 6.39
 
 
 class GetTotalVolumeSinceReset(ShortGetterCommand):  # 6.40
-    """Get the total volume dispensed since the last reset in µL, mL or liters."""
+    """Get the total volume dispensed since the last reset in µL, mL or
+    liters.
+    """
 
     # NOTE: distinguish from GetVolumeSinceReset?
     # - same, but converts to a "nice" unit
