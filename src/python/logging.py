@@ -2,12 +2,16 @@
 
 import csv
 import gc
+import logging as pylog
 import time
 from datetime import datetime, timedelta
 
 from keras import backend as K
+
 from moma import MoMaAnalysis
 from utils import get_img_name, get_next_log_filename
+
+from .timer import Timer
 
 
 class CSVLogger:
@@ -60,6 +64,16 @@ class CSVLogger:
             self.file.close()
             self.file = None
             self.writer = None
+
+
+class ElapsedTimeFilter(pylog.Filter):
+    def __init__(self, timer: Timer):
+        super().__init__()
+        self.timer = timer
+
+    def filter(self, record):
+        record.elapsed = self.timer.elapsed
+        return True
 
 
 def log_fluorescence(
