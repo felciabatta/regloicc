@@ -387,6 +387,24 @@ class DataMessage(DeviceMessage):
         self.checkargs()
         return super().__init__(**kwargs)
 
+    def __len__(self):
+        return len(self.args)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.args[key]
+        else:
+            raise KeyError("index should be int")
+
+    def __str__(self) -> str:
+        args = self.sep.join(str(a) for a in self.args)
+        return f"{self.begin}{args}{self.end}"
+
+    def __repr__(self) -> str:
+        optargs = [repr(a) for a in self.args]
+        kws = f"begin={self.begin!r}, sep={self.sep!r}, end={self.end!r}"
+        return f"DataMessage({", ".join(optargs + [kws])})"
+
     @property
     def args(self):
         return self._args
@@ -414,24 +432,6 @@ class DataMessage(DeviceMessage):
     @property
     def end(self):
         return self._end
-
-    def __len__(self):
-        return len(self.args)
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return self.args[key]
-        else:
-            raise KeyError("index should be int")
-
-    def __str__(self) -> str:
-        args = self.sep.join(str(a) for a in self.args)
-        return f"{self.begin}{args}{self.end}"
-
-    def __repr__(self) -> str:
-        optargs = [repr(a) for a in self.args]
-        kws = f"begin={self.begin!r}, sep={self.sep!r}, end={self.end!r}"
-        return f"DataMessage({", ".join(optargs + [kws])})"
 
     def checkargs(self):
         isok = self.ntypes == self.nargs
@@ -838,9 +838,9 @@ class RequestMessage(RegloMessage):
         elif self.rtype is type(None):
             value = None
         elif isinstance(value, str) and issubclass(self.rcls, self._RTYPES):
-            value = self.rcls.from_str(value, self.timer)
+            value = self.rcls.from_str(value, timer=self.timer)
         elif isinstance(value, Serial) and issubclass(self.rcls, self._RTYPES):
-            value = self.rcls.read(value, self.timer)
+            value = self.rcls.read(value, timer=self.timer)
         else:
             raise ValueError(
                 "response must be str, StatusResponse or DataResponse, "

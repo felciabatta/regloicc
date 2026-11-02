@@ -42,8 +42,8 @@ References
   )
 """
 
-from pathlib import Path
 import time
+from pathlib import Path
 
 from pandas import DataFrame
 from pandas import concat as pdcat
@@ -443,20 +443,20 @@ class RegloDevice:
     :param outdir: Directory where any output files are written to.
     """
 
-    _serial = None
     _addr_mode = CHANNEL_ADDRESSING
+    timer = None
 
     def __init__(
         self,
         addr: ChannelAddressType | int = ChannelAddressType(),
-        serial: None | str | Serial = _serial,
+        serial: None | str | Serial = None,
         pump_addr: PumpAddressType | None = None,
         verbose=True,
         tube_diameter=0.51,
         display_message="we be pumpin'",
         mode=ModeFlowrate(),
         flowrate_limit=0.5,
-        outdir: str | Path = Path("./output"),
+        outdir: Path | str = "./output",
         timer: Timer | None = None,
     ) -> None:
         # Open serial port with data format corresponding to the RegloICC pump
@@ -470,7 +470,13 @@ class RegloDevice:
                 "response",
             ]
         )
+        self.timer = timer
         self.verbose = verbose
+        self.logger: CSVLogger = CSVLogger(
+            Path(outdir) / "pump.csv",
+            ["elapsed", "datetime", "origin", "message", "serial"],
+        )
+
         self._current_request = None
         self._flowrate_limit = flowrate_limit
 
@@ -481,11 +487,6 @@ class RegloDevice:
         self.display_nums = display_message
         self.mode = mode
         self.stop()
-        self.timer = timer
-        self.logger: CSVLogger = CSVLogger(
-            Path(outdir) / "pump.csv",
-            ["elapsed", "datetime", "origin", "message", "serial"],
-        )
 
     def __repr__(self) -> str:
         return f"RegloChannel({self.addr, self.serial})"
@@ -498,7 +499,7 @@ class RegloDevice:
         self.logger.__exit__(exc_type, exc_val, exc_tb)
 
     @property
-    def serial(self):
+    def serial(self) -> Serial:
         return self._serial
 
     @serial.setter
@@ -556,14 +557,14 @@ class RegloDevice:
                 datetime=request.datetime,
                 origin="request",
                 message=repr(request),
-                serial=str(request),
+                serial=repr(str(request)),
             )
             self.logger.write(
                 elapsed=response.elapsed,
                 datetime=response.datetime,
                 origin="reponse",
                 message=repr(response),
-                serial=str(response),
+                serial=repr(str(response)),
             )
 
         return self.log
@@ -628,7 +629,9 @@ class RegloDevice:
     @channel_addressing.setter
     def channel_addressing(self, value):  # 1.2
         # NOTE: always legacy pump addr (1–8), as set by "@<pump_addr>"
-        response = self.send_request(SetChannelAddressing, value)
+        response = self.send_request(
+            SetChannelAddressing, value, addr=self.pump_addr
+        )
         self._addr_mode = int(value)
         return response
 
