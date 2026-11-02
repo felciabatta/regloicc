@@ -18,6 +18,15 @@ class TimeDelta(timedelta):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__()
 
+    def __str__(self) -> str:
+        total_us = int(self.total_seconds() * 1_000_000)
+
+        hours, remainder = divmod(total_us, 3_600_000_000)
+        minutes, remainder = divmod(remainder, 60_000_000)
+        seconds, microseconds = divmod(remainder, 1_000_000)
+
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{microseconds:06d}"
+
     def __add__(self, value):
         return self.from_timedelta(super().__add__(value))
 
