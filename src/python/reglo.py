@@ -49,9 +49,6 @@ from pandas import DataFrame
 from pandas import concat as pdcat
 from serial import EIGHTBITS, PARITY_NONE, STOPBITS_ONE, Serial
 
-from ..logging import CSVLogger
-from ..timer import Timer
-from ..utils import flux2mmmmse, get_port, parse_none, progress_timer
 from .constants import (
     AT,
     CARET,
@@ -228,6 +225,7 @@ from .constants import (
     VOLTYPE_MAX,
     VOLTYPE_MIN,
 )
+from .logging import CSVLogger
 from .messages import (
     BackstepsResponse,
     CalActualVolumeResponse,
@@ -435,6 +433,8 @@ from .reglotypes import (
     VolumeType1,
     VolumeType2,
 )
+from .timer import Timer
+from .utils import flux2mmmmse, get_port, parse_none, progress_timer
 
 
 class RegloDevice:

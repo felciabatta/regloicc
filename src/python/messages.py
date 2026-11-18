@@ -2,8 +2,6 @@ from datetime import datetime
 
 from serial import Serial
 
-from ..timer import Timer
-from ..utils import parse_none
 from .constants import (
     AT,
     CHANNEL_ADDRESSING,
@@ -119,6 +117,7 @@ from .constants import (
 from .reglotypes import (
     AddressType,
     BooleanType,
+    ByteCodeType,
     ChannelAddressType,
     ChannelOrPxAddressType,
     CharType,
@@ -142,6 +141,7 @@ from .reglotypes import (
     ProxyAddressType,
     ProxyOrChAddressType,
     PumpAddressType,
+    StandardByteCodeType,
     StatusType,
     StringType,
     SuccessType,
@@ -151,9 +151,9 @@ from .reglotypes import (
     UnknownType,
     VolumeType1,
     VolumeType2,
-    ByteCodeType,
-    StandardByteCodeType,
 )
+from .timer import Timer
+from .utils import parse_none
 
 
 class RegloMessage:

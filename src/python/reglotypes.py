@@ -2,8 +2,6 @@
 
 from numpy import clip, format_float_scientific, uint
 
-from src.python.utils import parse_none
-
 from .constants import (
     CCW,
     CHANNEL_ADDRESSING,
@@ -57,6 +55,7 @@ from .constants import (
     VOLTYPE_MAX,
     VOLTYPE_MIN,
 )
+from .utils import parse_none
 
 
 class RegloDataType:
