@@ -1,4 +1,4 @@
-"""Extract & log data streams for live experiments."""
+"""Logging for live experiments."""
 
 import csv
 import logging as pylog
