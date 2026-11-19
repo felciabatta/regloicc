@@ -24,7 +24,6 @@ classifiers = [
     "Private :: Do Not Upload",
 
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
 
     "Intended Audience :: Science/Research",
