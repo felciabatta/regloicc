@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "regloicc"
+version = "0.1.0"
+authors = [
+    {name = "Foenix Dubicki-Piper", email = "felciabatta@gmail.com"},
+]
+description = "A Python interface to the Masterflex Ismatec Reglo ICC peristalic pumps."
+readme = "README.md"
+requires-python = ">= 3.13"
+dependencies = [
+    "numpy",
+    "pyserial",
+    "rich"
+]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["Reglo ICC", "peristalic pump", "serial command protocol", "Ismatec", "Masterflex", "microfluidics"]
+classifiers = [
+    "Private :: Do Not Upload",
+
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Healthcare Industry",
+
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Instrument Drivers",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Software Development :: User Interfaces",
+    "Topic :: System :: Hardware :: Universal Serial Bus (USB)",
+
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.optional-dependencies]
+dev = ["black", "isort", "flake8", "ipykernel", "ipython"]
