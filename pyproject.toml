@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "regloicc"
-version = "0.1.0"
+version = "0.1.0b1"
 authors = [
     {name = "Foenix Dubicki-Piper", email = "felciabatta@gmail.com"},
 ]
@@ -23,7 +23,7 @@ keywords = ["Reglo ICC", "peristalic pump", "serial command protocol", "Ismatec"
 classifiers = [
     "Private :: Do Not Upload",
 
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Natural Language :: English",
 
     "Intended Audience :: Science/Research",
